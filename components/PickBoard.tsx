@@ -137,7 +137,7 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
     [localNotes]
   )
 
-  // 🔽 追加：ロールごとに「確定済みチャンピオン」を 1 体まで紐づけておく
+  // ロールごとに「確定済みチャンピオン」を1体まで紐づけ
   const pickedByRole: Record<Role, PoolRow | null> = useMemo(() => {
     const result: Record<Role, PoolRow | null> = {
       TOP: null,
@@ -285,6 +285,22 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
     }
   }
 
+  // ステータスの優先順位（並び順用）
+  const statusRank = (s: Status) => {
+    switch (s) {
+      case 'PICKED':
+        return 0      // 一応最上位扱い（ほぼ出番なしだが念のため）
+      case 'PRIORITY':
+        return 1      // ★ ピック候補が一番上
+      case 'NONE':
+        return 2      // その次に未設定
+      case 'UNAVAILABLE':
+        return 3      // ★ ピック不可は一番下
+      default:
+        return 9
+    }
+  }
+
   // ===== JSX =====
   return (
     <div className="space-y-5 text-sm text-zinc-200">
@@ -348,6 +364,24 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
             const member = memberByRole[role]
             const rolePools = poolsByRole[role] || []
 
+            // ★ ここでロール内の並び順を決める
+            const sortedRolePools = [...rolePools].sort((a, b) => {
+              const sa = getStatus(a.champion_id)
+              const sb = getStatus(b.champion_id)
+
+              const ra = statusRank(sa)
+              const rb = statusRank(sb)
+              if (ra !== rb) return ra - rb
+
+              // 同じステータスなら、得意度の高い順（3 → 2 → 1）
+              if (a.proficiency !== b.proficiency) {
+                return b.proficiency - a.proficiency
+              }
+
+              // それでも同じなら名前順で固定
+              return a.champion.name.localeCompare(b.champion.name)
+            })
+
             return (
               <div key={role} className="flex flex-col gap-2">
                 {/* ロール見出し + 表示名 */}
@@ -364,7 +398,7 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
 
                 {/* チャンピオングリッド */}
                 <div className="grid grid-cols-2 gap-2">
-                  {rolePools.map((p) => {
+                  {sortedRolePools.map((p) => {
                     const status = getStatus(p.champion_id)
 
                     return (
@@ -394,7 +428,7 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
                               className="w-10 h-10 rounded object-cover"
                             />
                           ) : (
-                            <div className="w-10 h-10 rounded bg-zinc-800 text-[9px] flex items中心 justify-center text-zinc-300 px-1 text-center">
+                            <div className="w-10 h-10 rounded bg-zinc-800 text-[9px] flex items-center justify-center text-zinc-300 px-1 text-center">
                               {p.champion.name}
                             </div>
                           )}
