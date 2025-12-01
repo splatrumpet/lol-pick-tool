@@ -181,6 +181,14 @@ export default function RoomPage() {
     [usedRoles]
   )
 
+  // 🔽 ここを追加：メンバーをロール順にソートした配列
+  const sortedMembers = useMemo(() => {
+    const roleIndex = (role: Role) => ROLES.indexOf(role)
+    return [...members].sort(
+      (a, b) => roleIndex(a.role) - roleIndex(b.role)
+    )
+  }, [members])
+
   const handleJoinRoom = async (role: Role) => {
     if (!user) return
     const name = displayNameInput.trim() || user.email || 'NoName'
@@ -442,7 +450,7 @@ export default function RoomPage() {
                 まだ誰も参加していません
               </span>
             )}
-            {members.map((m) => (
+            {sortedMembers.map((m) => (
               <span
                 key={m.id}
                 className="px-2 py-1 rounded-full bg-zinc-950/70 border border-zinc-700 text-[11px]"
@@ -499,7 +507,7 @@ export default function RoomPage() {
 
       {/* ピックボードカード */}
       <section className="border border-zinc-800 rounded-xl bg-zinc-900/70 p-4 shadow-lg shadow-black/30">
-        <PickBoard roomId={roomId} members={members} pools={pools} notes={notes} />
+        <PickBoard roomId={roomId} members={sortedMembers} pools={pools} notes={notes} />
       </section>
     </div>
   )

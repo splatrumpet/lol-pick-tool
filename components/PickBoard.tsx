@@ -4,12 +4,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { ROLES, Role } from '@/constants/roles'
-import { RoleColumn } from './RoleColumn'
-import { ChampionIcon } from './ChampionIcon'
 
 type Status = 'NONE' | 'PRIORITY' | 'PICKED' | 'UNAVAILABLE'
 
-interface PoolRow {
+type PoolRow = {
   id: string
   champion_id: string
   role: Role
@@ -23,14 +21,14 @@ interface PoolRow {
   }
 }
 
-interface NoteRow {
+type NoteRow = {
   id?: string
   room_id: string
   champion_id: string
   status: Status
 }
 
-interface MemberRow {
+type MemberRow = {
   id: string
   room_id: string
   user_id: string
@@ -38,56 +36,79 @@ interface MemberRow {
   role: Role
 }
 
-interface PickBoardProps {
+type Props = {
   roomId: string
   members: MemberRow[]
-  pools?: PoolRow[]
-  notes?: NoteRow[]
+  pools: PoolRow[]
+  notes: NoteRow[]
 }
 
-// 並び順（上に来るほど数字が小さい）
-const STATUS_ORDER: Record<Status, number> = {
-  PICKED: 0,
-  PRIORITY: 1,
-  NONE: 2,
-  UNAVAILABLE: 3,
-}
+export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
+  const [localNotes, setLocalNotes] = useState<NoteRow[]>(notes)
 
-// ロールごとの「確定前の状態」を覚えておくための型
-type RolePrevStates = Partial<Record<Role, Record<string, Status>>>
-
-export function PickBoard({
-  roomId,
-  members,
-  pools = [],
-  notes = [],
-}: PickBoardProps) {
-  const [localNotes, setLocalNotes] = useState<NoteRow[]>(notes ?? [])
-  const [rolePrevStates, setRolePrevStates] = useState<RolePrevStates>({})
-
-  // RoomPage 側でリセットされたときなどに props.notes を反映
+  // 親からの初期値と同期
   useEffect(() => {
-    setLocalNotes(notes ?? [])
-    setRolePrevStates({})
+    setLocalNotes(notes)
   }, [notes])
 
-  const noteMap = useMemo(() => {
-    const map = new Map<string, Status>()
-      ; (localNotes ?? []).forEach((n) => map.set(n.champion_id, n.status))
-    return map
-  }, [localNotes])
+  // ===== Realtime購読（他ブラウザと同期） =====
+  useEffect(() => {
+    if (!roomId) return
 
-  const safePools = Array.isArray(pools) ? pools : []
+    const fetchNotes = async () => {
+      const { data, error } = await supabase
+        .from('room_champion_notes')
+        .select('*')
+        .eq('room_id', roomId)
 
-  // role -> member
-  const memberByRole = useMemo(() => {
-    const map = new Map<Role, MemberRow>()
-    members.forEach((m) => map.set(m.role, m))
-    return map
-  }, [members])
+      if (error) {
+        console.error('failed to fetch notes', error)
+        return
+      }
 
-  // ロールごとにチャンピオンをまとめる（状態 → 得意度順）
-  const poolsByRole = useMemo(() => {
+      setLocalNotes(
+        (data || []).map((n: any) => ({
+          id: n.id,
+          room_id: n.room_id,
+          champion_id: n.champion_id,
+          status: n.status as Status,
+        }))
+      )
+    }
+
+    // 初回同期
+    fetchNotes()
+
+    const channel = supabase
+      .channel(`room-${roomId}-notes`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'room_champion_notes',
+          filter: `room_id=eq.${roomId}`,
+        },
+        () => {
+          fetchNotes()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [roomId])
+
+  // ===== ヘルパー =====
+  const getStatus = (championId: string): Status => {
+    return (
+      localNotes.find((n) => n.champion_id === championId)?.status || 'NONE'
+    )
+  }
+
+  // ロールごとにプールをまとめる
+  const poolsByRole: Record<Role, PoolRow[]> = useMemo(() => {
     const res: Record<Role, PoolRow[]> = {
       TOP: [],
       JG: [],
@@ -95,281 +116,352 @@ export function PickBoard({
       ADC: [],
       SUP: [],
     }
-
-    safePools.forEach((p) => {
-      if (res[p.role]) {
-        res[p.role].push(p)
-      }
+    pools?.forEach((p) => {
+      if (res[p.role]) res[p.role].push(p)
     })
-
-      ; (Object.keys(res) as Role[]).forEach((role) => {
-        res[role].sort((a, b) => {
-          const sa = noteMap.get(a.champion_id) ?? 'NONE'
-          const sb = noteMap.get(b.champion_id) ?? 'NONE'
-          const orderDiff = STATUS_ORDER[sa] - STATUS_ORDER[sb]
-          if (orderDiff !== 0) return orderDiff
-          return b.proficiency - a.proficiency
-        })
-      })
-
     return res
-  }, [safePools, noteMap])
+  }, [pools])
 
-  const upsertAllNotes = async (nextNotes: NoteRow[]) => {
-    const payload = nextNotes.map((n) => ({
-      room_id: roomId,
-      champion_id: n.champion_id,
-      status: n.status,
-    }))
-    await supabase
-      .from('room_champion_notes')
-      .upsert(payload, { onConflict: 'room_id,champion_id' })
-  }
+  // ロールごとの担当メンバー（表示名用：ロール見出し用だけ）
+  const memberByRole: Record<Role, MemberRow | undefined> = useMemo(() => {
+    const map: Partial<Record<Role, MemberRow>> = {}
+    for (const m of members) {
+      map[m.role] = m
+    }
+    return map as Record<Role, MemberRow | undefined>
+  }, [members])
 
-  // アイコン本体クリック：未設定 ⇄ ピック候補 のみ
-  const handleToggleStatus = async (championId: string) => {
-    const current = noteMap.get(championId) ?? 'NONE'
-    if (current === 'PICKED' || current === 'UNAVAILABLE') {
+  // 確定済みノート
+  const pickedList = useMemo(
+    () => localNotes.filter((n) => n.status === 'PICKED'),
+    [localNotes]
+  )
+
+  // 🔽 追加：ロールごとに「確定済みチャンピオン」を 1 体まで紐づけておく
+  const pickedByRole: Record<Role, PoolRow | null> = useMemo(() => {
+    const result: Record<Role, PoolRow | null> = {
+      TOP: null,
+      JG: null,
+      MID: null,
+      ADC: null,
+      SUP: null,
+    }
+    for (const n of pickedList) {
+      const pool = pools.find((p) => p.champion_id === n.champion_id)
+      if (pool) {
+        result[pool.role] = pool
+      }
+    }
+    return result
+  }, [pickedList, pools])
+
+  // すでに確定されているロール
+  const confirmedRoles = useMemo(() => {
+    const set = new Set<Role>()
+    for (const n of pickedList) {
+      const pool = pools.find((p) => p.champion_id === n.champion_id)
+      if (pool) set.add(pool.role)
+    }
+    return set
+  }, [pickedList, pools])
+
+  // ===== DBへの保存処理 =====
+  const saveNote = async (championId: string, status: Status) => {
+    const existing = localNotes.find((n) => n.champion_id === championId)
+
+    if (existing) {
+      if (status === 'NONE') {
+        await supabase
+          .from('room_champion_notes')
+          .delete()
+          .eq('id', existing.id)
+
+        setLocalNotes((prev) =>
+          prev.filter((n) => n.champion_id !== championId)
+        )
+      } else {
+        const { data, error } = await supabase
+          .from('room_champion_notes')
+          .update({ status })
+          .eq('id', existing.id)
+          .select()
+          .single()
+
+        if (!error && data) {
+          setLocalNotes((prev) =>
+            prev.map((n) =>
+              n.id === existing.id
+                ? { ...n, status: data.status as Status }
+                : n
+            )
+          )
+        }
+      }
       return
     }
 
-    const next: Status = current === 'PRIORITY' ? 'NONE' : 'PRIORITY'
-    let nextNotes: NoteRow[] = []
+    const { data, error } = await supabase
+      .from('room_champion_notes')
+      .insert({
+        room_id: roomId,
+        champion_id: championId,
+        status,
+      })
+      .select()
+      .single()
 
-    setLocalNotes((prev) => {
-      const map = new Map<string, NoteRow>()
-      prev.forEach((n) => map.set(n.champion_id, n))
-
-      const existing = map.get(championId)
-      if (existing) {
-        existing.status = next
-      } else {
-        map.set(championId, {
-          room_id: roomId,
-          champion_id: championId,
-          status: next,
-        })
-      }
-
-      nextNotes = Array.from(map.values())
-      return nextNotes
-    })
-
-    await upsertAllNotes(nextNotes)
+    if (!error && data) {
+      setLocalNotes((prev) => [
+        ...prev,
+        {
+          id: data.id,
+          room_id: data.room_id,
+          champion_id: data.champion_id,
+          status: data.status as Status,
+        },
+      ])
+    }
   }
 
-  // 「不可」ボタン：未設定/候補 ⇄ 不可 （確定中は触らない）
+  // ピック不可を手動でON/OFFする
   const handleToggleUnavailable = async (championId: string) => {
-    const current = noteMap.get(championId) ?? 'NONE'
-    if (current === 'PICKED') return
+    const status = getStatus(championId)
+    if (status === 'PICKED') return
 
-    const next: Status =
-      current === 'UNAVAILABLE' ? 'NONE' : 'UNAVAILABLE'
-
-    let nextNotes: NoteRow[] = []
-
-    setLocalNotes((prev) => {
-      const map = new Map<string, NoteRow>()
-      prev.forEach((n) => map.set(n.champion_id, n))
-
-      const existing = map.get(championId)
-      if (existing) {
-        existing.status = next
-      } else {
-        map.set(championId, {
-          room_id: roomId,
-          champion_id: championId,
-          status: next,
-        })
-      }
-
-      nextNotes = Array.from(map.values())
-      return nextNotes
-    })
-
-    await upsertAllNotes(nextNotes)
+    if (status === 'UNAVAILABLE') {
+      await saveNote(championId, 'NONE')
+    } else {
+      await saveNote(championId, 'UNAVAILABLE')
+    }
   }
 
-  // 「確定」ボタン：1ロール1体 + 確定時に同ロール他は不可に
-  // 解除時は「確定前の状態」をできるだけ復元
-  const handleTogglePicked = async (championId: string) => {
-    const current = noteMap.get(championId) ?? 'NONE'
+  // ===== 確定／解除まわり =====
+  const handleConfirmPick = async (championId: string) => {
+    const pool = pools.find((p) => p.champion_id === championId)
+    if (!pool) return
 
-    const targetPool = safePools.find(
-      (p) => p.champion_id === championId
-    )
-    if (!targetPool) return
+    const role = pool.role
 
-    const role = targetPool.role
-    const roleChampionIds = safePools
+    if (confirmedRoles.has(role)) {
+      alert(`${role} はすでに確定済みです`)
+      return
+    }
+
+    // 1体をPICKEDに
+    await saveNote(championId, 'PICKED')
+
+    // 同ロールの他の候補はUNAVAILABLEに
+    pools
+      .filter((p) => p.role === role && p.champion_id !== championId)
+      .forEach((p) => {
+        saveNote(p.champion_id, 'UNAVAILABLE')
+      })
+  }
+
+  const handleCancelConfirm = async (championId: string) => {
+    const pool = pools.find((p) => p.champion_id === championId)
+    if (!pool) return
+
+    const role = pool.role
+
+    // 自分をNONEに
+    await saveNote(championId, 'NONE')
+
+    // 同ロールの候補もまとめてNONEに戻す
+    pools
       .filter((p) => p.role === role)
-      .map((p) => p.champion_id)
-
-    let nextNotes: NoteRow[] = []
-
-    setLocalNotes((prev) => {
-      const map = new Map<string, NoteRow>()
-      prev.forEach((n) => map.set(n.champion_id, n))
-
-      if (current === 'PICKED') {
-        // ★ 確定解除：できるだけ「確定前の状態」に戻す
-        const prevByRole = rolePrevStates[role]
-
-        if (prevByRole) {
-          roleChampionIds.forEach((id) => {
-            const prevStatus = prevByRole[id] ?? 'NONE'
-            const existing = map.get(id)
-            if (existing) {
-              existing.status = prevStatus
-            } else {
-              map.set(id, {
-                room_id: roomId,
-                champion_id: id,
-                status: prevStatus,
-              })
-            }
-          })
-
-          setRolePrevStates((prevStates) => {
-            const copy = { ...prevStates }
-            delete copy[role]
-            return copy
-          })
-        } else {
-          // スナップショットがない場合は、そのロールのチャンプを全部 NONE に
-          roleChampionIds.forEach((id) => {
-            const existing = map.get(id)
-            if (existing) {
-              existing.status = 'NONE'
-            } else {
-              map.set(id, {
-                room_id: roomId,
-                champion_id: id,
-                status: 'NONE',
-              })
-            }
-          })
-        }
-      } else {
-        // ★ 確定する前に、そのロールの状態をスナップショットに保存
-        const snapshot: Record<string, Status> = {}
-        roleChampionIds.forEach((id) => {
-          const s = noteMap.get(id) ?? 'NONE'
-          snapshot[id] = s
-        })
-        setRolePrevStates((prevStates) => ({
-          ...prevStates,
-          [role]: snapshot,
-        }))
-
-        // このロールの他チャンプは全部 UNAVAILABLE、自分だけ PICKED
-        roleChampionIds.forEach((id) => {
-          const existing = map.get(id)
-          if (id === championId) {
-            if (existing) {
-              existing.status = 'PICKED'
-            } else {
-              map.set(id, {
-                room_id: roomId,
-                champion_id: id,
-                status: 'PICKED',
-              })
-            }
-          } else {
-            if (existing) {
-              existing.status = 'UNAVAILABLE'
-            } else {
-              map.set(id, {
-                room_id: roomId,
-                champion_id: id,
-                status: 'UNAVAILABLE',
-              })
-            }
-          }
-        })
-      }
-
-      nextNotes = Array.from(map.values())
-      return nextNotes
-    })
-
-    await upsertAllNotes(nextNotes)
+      .forEach((p) => saveNote(p.champion_id, 'NONE'))
   }
 
-  return (
-    <div className="space-y-4">
-      {/* レジェンド */}
-      <div className="text-xs text-zinc-400 flex flex-wrap gap-4">
-        <span>
-          <span className="inline-block w-3 h-3 border border-transparent bg-zinc-700 mr-1" />
-          未設定
-        </span>
-        <span>
-          <span className="inline-block w-3 h-3 border-2 border-emerald-400 bg-zinc-700 mr-1" />
-          ピック候補
-        </span>
-        <span>
-          <span className="inline-block w-3 h-3 border-2 border-sky-400 bg-zinc-700 mr-1" />
-          ピック済み
-        </span>
-        <span>
-          <span className="inline-block w-3 h-3 border border-zinc-500 bg-zinc-700 opacity-40 mr-1" />
-          ピック不可
-        </span>
-      </div>
+  // 通常クリック：候補⇔未設定
+  const handleClickChampion = async (championId: string) => {
+    const status = getStatus(championId)
+    if (status === 'PICKED') return
 
-      {/* 確定ピックまとめ */}
-      <div className="border border-zinc-800 rounded-lg p-3 space-y-2 bg-zinc-950/60">
-        <div className="text-xs font-semibold text-zinc-300">
-          確定ピック（PICKED）
-        </div>
-        <div className="flex gap-4 overflow-x-auto">
+    if (status === 'NONE') {
+      await saveNote(championId, 'PRIORITY')
+    } else if (status === 'PRIORITY') {
+      await saveNote(championId, 'NONE')
+    }
+  }
+
+  // ===== JSX =====
+  return (
+    <div className="space-y-5 text-sm text-zinc-200">
+      {/* 確定済み一覧（5枠固定 & 未確定でも枠だけ表示） */}
+      <section className="border border-zinc-700 rounded-lg p-3 bg-zinc-900/80">
+        <h2 className="text-xs font-semibold mb-2 text-emerald-300">
+          確定済みピック
+        </h2>
+
+        <div className="grid grid-cols-5 gap-3">
           {ROLES.map((role) => {
-            const picked = (poolsByRole[role] || []).filter(
-              (p) => noteMap.get(p.champion_id) === 'PICKED'
-            )
-            const first = picked[0]
+            const picked = pickedByRole[role]
 
             return (
-              <div key={role} className="min-w-[110px] flex flex-col items-center">
-                <div className="text-[10px] text-zinc-400 mb-1">{role}</div>
-                {first ? (
-                  <div className="flex flex-col items-center gap-1">
-                    <ChampionIcon
-                      champion={first.champion}
-                      status="PICKED"
-                      onClick={() => handleTogglePicked(first.champion_id)}
-                    />
-                    <div className="text-[10px] text-zinc-300 text-center">
-                      {first.display_name}
+              <div
+                key={role}
+                className="flex flex-col items-center gap-1 bg-zinc-900 border border-zinc-700 rounded-md px-2 py-2 min-h-[110px]"
+              >
+                <div className="text-[11px] text-zinc-400 mb-1">
+                  {role}
+                </div>
+
+                {picked ? (
+                  <>
+                    {picked.champion.icon_url ? (
+                      <img
+                        src={picked.champion.icon_url}
+                        alt={picked.champion.name}
+                        className="w-10 h-10 rounded object-cover"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded bg-zinc-800 text-[9px] flex items-center justify-center text-zinc-300 px-1 text-center">
+                        {picked.champion.name}
+                      </div>
+                    )}
+                    <div className="text-[11px] text-zinc-100 text-center line-clamp-2">
+                      {picked.champion.name}
                     </div>
-                  </div>
+                    <button
+                      onClick={() => handleCancelConfirm(picked.champion_id)}
+                      className="mt-1 text-[10px] text-red-400 hover:text-red-300"
+                    >
+                      解除
+                    </button>
+                  </>
                 ) : (
-                  <div className="w-14 h-14 rounded bg-zinc-900 border border-dashed border-zinc-700 flex items-center justify-center text-[9px] text-zinc-500">
-                    未選択
+                  <div className="flex-1 flex flex-col items-center justify-center text-[11px] text-zinc-600">
+                    未確定
                   </div>
                 )}
               </div>
             )
           })}
         </div>
-      </div>
+      </section>
 
-      {/* 5ロール横並び */}
-      <div className="flex gap-4 overflow-x-auto">
-        {ROLES.map((role) => (
-          <RoleColumn
-            key={role}
-            role={role}
-            member={memberByRole.get(role)}
-            champions={poolsByRole[role]}
-            noteMap={noteMap}
-            onToggleStatus={handleToggleStatus}
-            onToggleUnavailable={handleToggleUnavailable}
-            onTogglePicked={handleTogglePicked}
-          />
-        ))}
-      </div>
+      {/* ロール横並び（プール一覧） */}
+      <section className="border border-zinc-700 rounded-lg p-3 bg-zinc-900/80">
+        <div className="grid grid-cols-5 gap-4">
+          {ROLES.map((role) => {
+            const member = memberByRole[role]
+            const rolePools = poolsByRole[role] || []
+
+            return (
+              <div key={role} className="flex flex-col gap-2">
+                {/* ロール見出し + 表示名 */}
+                <div className="text-center">
+                  <div className="text-sm font-semibold text-zinc-100">
+                    {role}
+                  </div>
+                  {member && (
+                    <div className="text-[11px] text-zinc-400">
+                      {member.display_name}
+                    </div>
+                  )}
+                </div>
+
+                {/* チャンピオングリッド */}
+                <div className="grid grid-cols-2 gap-2">
+                  {rolePools.map((p) => {
+                    const status = getStatus(p.champion_id)
+
+                    return (
+                      <div
+                        key={p.id}
+                        className="flex flex-col items-center gap-1 text-[10px]"
+                      >
+                        {/* アイコンボタン */}
+                        <button
+                          onClick={() => handleClickChampion(p.champion_id)}
+                          disabled={status === 'PICKED'}
+                          className={[
+                            'relative flex flex-col items-center gap-1 p-1 rounded-md border w-full transition',
+                            status === 'PICKED'
+                              ? 'border-emerald-400 bg-emerald-500/10 shadow shadow-emerald-500/30'
+                              : status === 'UNAVAILABLE'
+                                ? 'border-red-500/50 bg-red-500/5 opacity-40'
+                                : status === 'PRIORITY'
+                                  ? 'border-blue-400 bg-blue-500/10'
+                                  : 'border-zinc-700 hover:border-zinc-500 hover:bg-zinc-800/40',
+                          ].join(' ')}
+                        >
+                          {p.champion.icon_url ? (
+                            <img
+                              src={p.champion.icon_url}
+                              alt={p.champion.name}
+                              className="w-10 h-10 rounded object-cover"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded bg-zinc-800 text-[9px] flex items中心 justify-center text-zinc-300 px-1 text-center">
+                              {p.champion.name}
+                            </div>
+                          )}
+
+                          {/* ピック不可の × マーク */}
+                          {status === 'UNAVAILABLE' && (
+                            <div className="absolute inset-0 flex items-center justify-center text-red-500 text-xl font-bold pointer-events-none">
+                              ×
+                            </div>
+                          )}
+                        </button>
+
+                        {/* チャンピオン名のみ表示（表示名は出さない） */}
+                        <span className="text-[9px] text-zinc-200 text-center line-clamp-2">
+                          {p.champion.name}
+                        </span>
+
+                        {/* ピック不可トグル */}
+                        {status !== 'PICKED' && (
+                          <button
+                            onClick={() =>
+                              handleToggleUnavailable(p.champion_id)
+                            }
+                            className={
+                              status === 'UNAVAILABLE'
+                                ? 'text-[10px] text-red-300 hover:text-red-200'
+                                : 'text-[10px] text-zinc-400 hover:text-zinc-200'
+                            }
+                          >
+                            {status === 'UNAVAILABLE'
+                              ? '不可を解除'
+                              : '不可にする'}
+                          </button>
+                        )}
+
+                        {/* 確定／解除ボタン */}
+                        {status !== 'PICKED' ? (
+                          <button
+                            onClick={() => handleConfirmPick(p.champion_id)}
+                            disabled={status === 'UNAVAILABLE'}
+                            className="text-[10px] text-emerald-300 hover:text-emerald-200 disabled:opacity-40"
+                          >
+                            確定
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleCancelConfirm(p.champion_id)}
+                            className="text-[10px] text-red-400 hover:text-red-300"
+                          >
+                            解除
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
+
+                  {rolePools.length === 0 && (
+                    <div className="col-span-2 text-[11px] text-zinc-500 text-center mt-2">
+                      プール未登録
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </section>
     </div>
   )
 }
