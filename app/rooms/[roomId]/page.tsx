@@ -113,22 +113,29 @@ export default function RoomPage() {
           .select('id, champion_id, role, proficiency, user_id, champions(*)')
           .in('user_id', memberUserIds)
 
+        // 🔧 修正ポイント①
+        // 「このルームでその人が選んだロールと同じものだけ」採用する
         const poolsMapped: PoolRow[] =
-          (poolData || []).map((p: any) => {
+          (poolData || []).flatMap((p: any) => {
             const member = memberRows.find((m) => m.user_id === p.user_id)
-            return {
-              id: p.id,
-              champion_id: p.champion_id,
-              role: p.role as Role,
-              proficiency: p.proficiency,
-              user_id: p.user_id,
-              display_name: member?.display_name ?? 'unknown',
-              champion: {
-                id: p.champions.id,
-                name: p.champions.name,
-                icon_url: p.champions.icon_url,
+            if (!member) return []
+            // ルーム上の担当ロールと違うロールのプールは、このルームでは使わない
+            if (p.role !== member.role) return []
+            return [
+              {
+                id: p.id,
+                champion_id: p.champion_id,
+                role: member.role, // p.role と同じだが明示
+                proficiency: p.proficiency,
+                user_id: p.user_id,
+                display_name: member.display_name,
+                champion: {
+                  id: p.champions.id,
+                  name: p.champions.name,
+                  icon_url: p.champions.icon_url,
+                },
               },
-            }
+            ]
           }) ?? []
 
         setPools(poolsMapped)
@@ -205,16 +212,19 @@ export default function RoomPage() {
     const newMembers = [...members, newMember]
     setMembers(newMembers)
 
+    // 🔧 修正ポイント②
+    // 参加したロールと同じロールのプールだけ取得
     const { data: poolData } = await supabase
       .from('user_champion_pools')
       .select('id, champion_id, role, proficiency, user_id, champions(*)')
       .eq('user_id', user.id)
+      .eq('role', role)
 
     const addedPools: PoolRow[] =
       (poolData || []).map((p: any) => ({
         id: p.id,
         champion_id: p.champion_id,
-        role: p.role as Role,
+        role: role,
         proficiency: p.proficiency,
         user_id: p.user_id,
         display_name: newMember.display_name,
