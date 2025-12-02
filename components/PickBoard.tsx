@@ -43,6 +43,13 @@ type Props = {
   notes: NoteRow[]
 }
 
+const getProficiencyStars = (p: number) => {
+  if (p >= 3) return '★★★'
+  if (p === 2) return '★★☆'
+  if (p === 1) return '★☆☆'
+  return ''
+}
+
 export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
   const [localNotes, setLocalNotes] = useState<NoteRow[]>(notes)
 
@@ -122,7 +129,7 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
     return res
   }, [pools])
 
-  // ロールごとの担当メンバー（表示名用：ロール見出し用だけ）
+  // ロールごとの担当メンバー（表示名用）
   const memberByRole: Record<Role, MemberRow | undefined> = useMemo(() => {
     const map: Partial<Record<Role, MemberRow>> = {}
     for (const m of members) {
@@ -289,28 +296,27 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
   const statusRank = (s: Status) => {
     switch (s) {
       case 'PICKED':
-        return 0      // 一応最上位扱い（ほぼ出番なしだが念のため）
+        return 0
       case 'PRIORITY':
-        return 1      // ★ ピック候補が一番上
+        return 1
       case 'NONE':
-        return 2      // その次に未設定
+        return 2
       case 'UNAVAILABLE':
-        return 3      // ★ ピック不可は一番下
+        return 3
       default:
         return 9
     }
   }
 
-  // ===== JSX =====
   return (
     <div className="space-y-5 text-sm text-zinc-200">
-      {/* 確定済み一覧（5枠固定 & 未確定でも枠だけ表示） */}
+      {/* 確定済み一覧（5枠固定） */}
       <section className="border border-zinc-700 rounded-lg p-3 bg-zinc-900/80">
         <h2 className="text-xs font-semibold mb-2 text-emerald-300">
           確定済みピック
         </h2>
 
-        <div className="grid grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           {ROLES.map((role) => {
             const picked = pickedByRole[role]
 
@@ -329,14 +335,14 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
                       <img
                         src={picked.champion.icon_url}
                         alt={picked.champion.name}
-                        className="w-10 h-10 rounded object-cover"
+                        className="w-9 h-9 rounded object-cover"
                       />
                     ) : (
-                      <div className="w-10 h-10 rounded bg-zinc-800 text-[9px] flex items-center justify-center text-zinc-300 px-1 text-center">
+                      <div className="w-9 h-9 rounded bg-zinc-800 text-[9px] flex items-center justify-center text-zinc-300 px-1 text-center">
                         {picked.champion.name}
                       </div>
                     )}
-                    <div className="text-[11px] text-zinc-100 text-center line-clamp-2">
+                    <div className="text-[10px] text-zinc-100 text-center line-clamp-2">
                       {picked.champion.name}
                     </div>
                     <button
@@ -357,14 +363,13 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
         </div>
       </section>
 
-      {/* ロール横並び（プール一覧） */}
-      <section className="border border-zinc-700 rounded-lg p-3 bg-zinc-900/80">
-        <div className="grid grid-cols-5 gap-4">
+      {/* プール一覧（5ロール横並びをキープ：小さい画面は横スクロール） */}
+      <section className="border border-zinc-700 rounded-lg bg-zinc-900/80 p-3 overflow-x-auto">
+        <div className="min-w-[900px] grid grid-cols-5 gap-3">
           {ROLES.map((role) => {
             const member = memberByRole[role]
             const rolePools = poolsByRole[role] || []
 
-            // ★ ここでロール内の並び順を決める
             const sortedRolePools = [...rolePools].sort((a, b) => {
               const sa = getStatus(a.champion_id)
               const sb = getStatus(b.champion_id)
@@ -373,45 +378,44 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
               const rb = statusRank(sb)
               if (ra !== rb) return ra - rb
 
-              // 同じステータスなら、得意度の高い順（3 → 2 → 1）
+              // 同じステータスなら、得意度の高い順
               if (a.proficiency !== b.proficiency) {
                 return b.proficiency - a.proficiency
               }
 
-              // それでも同じなら名前順で固定
               return a.champion.name.localeCompare(b.champion.name)
             })
 
             return (
-              <div key={role} className="flex flex-col gap-2">
+              <div key={role} className="flex flex-col gap-1.5">
                 {/* ロール見出し + 表示名 */}
                 <div className="text-center">
-                  <div className="text-sm font-semibold text-zinc-100">
+                  <div className="text-xs font-semibold text-zinc-100">
                     {role}
                   </div>
                   {member && (
-                    <div className="text-[11px] text-zinc-400">
+                    <div className="text-[10px] text-zinc-400">
                       {member.display_name}
                     </div>
                   )}
                 </div>
 
                 {/* チャンピオングリッド */}
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-1.5">
                   {sortedRolePools.map((p) => {
                     const status = getStatus(p.champion_id)
 
                     return (
                       <div
                         key={p.id}
-                        className="flex flex-col items-center gap-1 text-[10px]"
+                        className="flex flex-col items-center gap-0.5 text-[9px]"
                       >
-                        {/* アイコンボタン */}
+                        {/* アイコンボタン（幅細め） */}
                         <button
                           onClick={() => handleClickChampion(p.champion_id)}
                           disabled={status === 'PICKED'}
                           className={[
-                            'relative flex flex-col items-center gap-1 p-1 rounded-md border w-full transition',
+                            'relative flex flex-col items-center gap-0.5 p-1 rounded-md border w-full transition',
                             status === 'PICKED'
                               ? 'border-emerald-400 bg-emerald-500/10 shadow shadow-emerald-500/30'
                               : status === 'UNAVAILABLE'
@@ -421,14 +425,19 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
                                   : 'border-zinc-700 hover:border-zinc-500 hover:bg-zinc-800/40',
                           ].join(' ')}
                         >
+                          {/* 得意度の星 */}
+                          <div className="text-[8px] text-amber-300 leading-none">
+                            {getProficiencyStars(p.proficiency)}
+                          </div>
+
                           {p.champion.icon_url ? (
                             <img
                               src={p.champion.icon_url}
                               alt={p.champion.name}
-                              className="w-10 h-10 rounded object-cover"
+                              className="w-8 h-8 rounded object-cover"
                             />
                           ) : (
-                            <div className="w-10 h-10 rounded bg-zinc-800 text-[9px] flex items-center justify-center text-zinc-300 px-1 text-center">
+                            <div className="w-8 h-8 rounded bg-zinc-800 text-[8px] flex items-center justify-center text-zinc-300 px-1 text-center">
                               {p.champion.name}
                             </div>
                           )}
@@ -441,8 +450,8 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
                           )}
                         </button>
 
-                        {/* チャンピオン名のみ表示（表示名は出さない） */}
-                        <span className="text-[9px] text-zinc-200 text-center line-clamp-2">
+                        {/* チャンピオン名のみ表示 */}
+                        <span className="text-[8px] text-zinc-200 text-center line-clamp-2">
                           {p.champion.name}
                         </span>
 
@@ -454,13 +463,13 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
                             }
                             className={
                               status === 'UNAVAILABLE'
-                                ? 'text-[10px] text-red-300 hover:text-red-200'
-                                : 'text-[10px] text-zinc-400 hover:text-zinc-200'
+                                ? 'text-[8px] text-red-300 hover:text-red-200'
+                                : 'text-[8px] text-zinc-400 hover:text-zinc-200'
                             }
                           >
                             {status === 'UNAVAILABLE'
-                              ? '不可を解除'
-                              : '不可にする'}
+                              ? '不可解除'
+                              : '不可'}
                           </button>
                         )}
 
@@ -469,14 +478,16 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
                           <button
                             onClick={() => handleConfirmPick(p.champion_id)}
                             disabled={status === 'UNAVAILABLE'}
-                            className="text-[10px] text-emerald-300 hover:text-emerald-200 disabled:opacity-40"
+                            className="text-[8px] text-emerald-300 hover:text-emerald-200 disabled:opacity-40"
                           >
                             確定
                           </button>
                         ) : (
                           <button
-                            onClick={() => handleCancelConfirm(p.champion_id)}
-                            className="text-[10px] text-red-400 hover:text-red-300"
+                            onClick={() =>
+                              handleCancelConfirm(p.champion_id)
+                            }
+                            className="text-[8px] text-red-400 hover:text-red-300"
                           >
                             解除
                           </button>
@@ -486,7 +497,7 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
                   })}
 
                   {rolePools.length === 0 && (
-                    <div className="col-span-2 text-[11px] text-zinc-500 text-center mt-2">
+                    <div className="col-span-2 text-[10px] text-zinc-500 text-center mt-1">
                       プール未登録
                     </div>
                   )}

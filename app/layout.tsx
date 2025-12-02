@@ -34,7 +34,7 @@ export default function RootLayout({
               </div>
               <nav className="flex items-center gap-3 text-xs">
                 <Link
-                  href="/"
+                  href="/mypage"
                   className="px-2 py-1 rounded-md text-zinc-300 hover:text-emerald-300 hover:bg-emerald-500/10 transition"
                 >
                   マイプール
