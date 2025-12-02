@@ -23,14 +23,14 @@ export default function RootLayout({
                 <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-400/40 flex items-center justify-center text-xs font-bold text-emerald-300 tracking-wide">
                   LOL
                 </div>
-                <div className="flex flex-col leading-tight">
+                <Link href="/" className="flex flex-col leading-tight">
                   <span className="text-sm font-semibold">
                     LoL ピックツール
                   </span>
                   <span className="text-[10px] text-zinc-400">
                     Champion Pool / Draft Helper
                   </span>
-                </div>
+                </Link>
               </div>
               <nav className="flex items-center gap-3 text-xs">
                 <Link
