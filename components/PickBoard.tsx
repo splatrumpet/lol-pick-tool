@@ -26,6 +26,7 @@ type NoteRow = {
   room_id: string
   champion_id: string
   status: Status
+  role: Role | null
 }
 
 type MemberRow = {
@@ -51,17 +52,92 @@ const getProficiencyStars = (p: number) => {
 }
 
 export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
+  // ===== ノート（ピック状態） =====
   const [localNotes, setLocalNotes] = useState<NoteRow[]>(notes)
 
-  // 親からの初期値と同期
   useEffect(() => {
     setLocalNotes(notes)
   }, [notes])
+
+  // ===== メンバー & プール（リアルタイム同期用） =====
+  const [localMembers, setLocalMembers] = useState<MemberRow[]>(members)
+  const [localPools, setLocalPools] = useState<PoolRow[]>(pools)
+
+  useEffect(() => {
+    setLocalMembers(members)
+  }, [members])
+
+  useEffect(() => {
+    setLocalPools(pools)
+  }, [pools])
+
+  // room_members + user_champion_pools を取り直す関数
+  const fetchMembersAndPools = async () => {
+    if (!roomId) return
+
+    // メンバー一覧
+    const { data: memberRows, error: memberError } = await supabase
+      .from('room_members')
+      .select('id, room_id, user_id, display_name, role')
+      .eq('room_id', roomId)
+      .order('role', { ascending: true })
+
+    if (memberError) {
+      console.error('failed to fetch members', memberError)
+      return
+    }
+
+    const membersData = (memberRows || []) as MemberRow[]
+    setLocalMembers(membersData)
+
+    const userIds = membersData.map((m) => m.user_id)
+    if (userIds.length === 0) {
+      setLocalPools([])
+      return
+    }
+
+    // そのメンバーのチャンピオンプール
+    const { data: poolData, error: poolError } = await supabase
+      .from('user_champion_pools')
+      .select('id, user_id, champion_id, role, proficiency, champions(*)')
+      .in('user_id', userIds)
+
+    if (poolError) {
+      console.error('failed to fetch pools', poolError)
+      return
+    }
+
+    const mappedPools: PoolRow[] = (poolData || [])
+      .map((p: any) => {
+        const member = membersData.find((m) => m.user_id === p.user_id)
+
+        if (!member) return null
+        if (member.role !== p.role) return null
+
+        return {
+          id: p.id,
+          champion_id: p.champion_id,
+          role: p.role as Role,
+          proficiency: p.proficiency,
+          user_id: p.user_id,
+          display_name: member.display_name ?? '',
+          champion: {
+            id: p.champions.id,
+            name: p.champions.name,
+            icon_url: p.champions.icon_url,
+          },
+        } as PoolRow
+      })
+      .filter((p): p is PoolRow => p !== null)
+
+    setLocalPools(mappedPools)
+  }
 
   // ===== Realtime購読（他ブラウザと同期） =====
   useEffect(() => {
     if (!roomId) return
 
+    // ---- ノート用（ピック状態） ----
     const fetchNotes = async () => {
       const { data, error } = await supabase
         .from('room_champion_notes')
@@ -79,14 +155,16 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
           room_id: n.room_id,
           champion_id: n.champion_id,
           status: n.status as Status,
+          role: (n.role ?? null) as Role | null,
         }))
       )
     }
 
     // 初回同期
     fetchNotes()
+    fetchMembersAndPools()
 
-    const channel = supabase
+    const notesChannel = supabase
       .channel(`room-${roomId}-notes`)
       .on(
         'postgres_changes',
@@ -102,19 +180,55 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
       )
       .subscribe()
 
+    // ---- メンバー用 ----
+    const membersChannel = supabase
+      .channel(`room-${roomId}-members`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'room_members',
+          filter: `room_id=eq.${roomId}`,
+        },
+        () => {
+          // 参加 / 退出 / ロール変更などがあったら取り直す
+          fetchMembersAndPools()
+        }
+      )
+      .subscribe()
+
     return () => {
-      supabase.removeChannel(channel)
+      supabase.removeChannel(notesChannel)
+      supabase.removeChannel(membersChannel)
     }
   }, [roomId])
 
-  // ===== ヘルパー =====
-  const getStatus = (championId: string): Status => {
-    return (
-      localNotes.find((n) => n.champion_id === championId)?.status || 'NONE'
-    )
-  }
+  // ===== 集計 =====
 
-  // ロールごとにプールをまとめる
+  // 各ロールで PICKED されているチャンプID
+  const pickedByRole: Record<Role, string | undefined> = useMemo(() => {
+    const map: Partial<Record<Role, string>> = {}
+    for (const n of localNotes) {
+      if (n.role && n.status === 'PICKED') {
+        map[n.role] = n.champion_id
+      }
+    }
+    return map as Record<Role, string | undefined>
+  }, [localNotes])
+
+  // どこかのロールで PICKED されているチャンピオン集合
+  const pickedChampionSet: Set<string> = useMemo(() => {
+    const s = new Set<string>()
+    for (const n of localNotes) {
+      if (n.role && n.status === 'PICKED') {
+        s.add(n.champion_id)
+      }
+    }
+    return s
+  }, [localNotes])
+
+  // ロールごとのプール
   const poolsByRole: Record<Role, PoolRow[]> = useMemo(() => {
     const res: Record<Role, PoolRow[]> = {
       TOP: [],
@@ -123,29 +237,52 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
       ADC: [],
       SUP: [],
     }
-    pools?.forEach((p) => {
+    localPools?.forEach((p) => {
       if (res[p.role]) res[p.role].push(p)
     })
     return res
-  }, [pools])
+  }, [localPools])
 
-  // ロールごとの担当メンバー（表示名用）
+  // ロールごとの担当メンバー
   const memberByRole: Record<Role, MemberRow | undefined> = useMemo(() => {
     const map: Partial<Record<Role, MemberRow>> = {}
-    for (const m of members) {
+    for (const m of localMembers) {
       map[m.role] = m
     }
     return map as Record<Role, MemberRow | undefined>
-  }, [members])
+  }, [localMembers])
 
-  // 確定済みノート
-  const pickedList = useMemo(
-    () => localNotes.filter((n) => n.status === 'PICKED'),
-    [localNotes]
-  )
+  // 「生」のステータス（DBそのまま・ロール専用）
+  const getRawStatus = (role: Role, championId: string): Status => {
+    const row = localNotes.find(
+      (n) => n.role === role && n.champion_id === championId
+    )
+    return row ? row.status : 'NONE'
+  }
 
-  // ロールごとに「確定済みチャンピオン」を1体まで紐づけ
-  const pickedByRole: Record<Role, PoolRow | null> = useMemo(() => {
+  // 実際に表示に使うステータス（確定ルールを反映）
+  const getStatus = (role: Role, championId: string): Status => {
+    const raw = getRawStatus(role, championId)
+    const pickedOfRole = pickedByRole[role]
+    const pickedSomewhere = pickedChampionSet.has(championId)
+
+    if (pickedSomewhere) {
+      if (pickedOfRole === championId) {
+        return 'PICKED'
+      } else {
+        return 'UNAVAILABLE'
+      }
+    }
+
+    if (pickedOfRole && pickedOfRole !== championId) {
+      return 'UNAVAILABLE'
+    }
+
+    return raw
+  }
+
+  // 確定済みピック一覧（表示用）
+  const pickedListByRole: Record<Role, PoolRow | null> = useMemo(() => {
     const result: Record<Role, PoolRow | null> = {
       TOP: null,
       JG: null,
@@ -153,39 +290,33 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
       ADC: null,
       SUP: null,
     }
-    for (const n of pickedList) {
-      const pool = pools.find((p) => p.champion_id === n.champion_id)
+    for (const role of ROLES) {
+      const champId = pickedByRole[role]
+      if (!champId) continue
+      const pool = localPools.find(
+        (p) => p.role === role && p.champion_id === champId
+      )
       if (pool) {
-        result[pool.role] = pool
+        result[role] = pool
       }
     }
     return result
-  }, [pickedList, pools])
+  }, [pickedByRole, localPools])
 
-  // すでに確定されているロール
-  const confirmedRoles = useMemo(() => {
-    const set = new Set<Role>()
-    for (const n of pickedList) {
-      const pool = pools.find((p) => p.champion_id === n.champion_id)
-      if (pool) set.add(pool.role)
-    }
-    return set
-  }, [pickedList, pools])
-
-  // ===== DBへの保存処理 =====
-  const saveNote = async (championId: string, status: Status) => {
-    const existing = localNotes.find((n) => n.champion_id === championId)
+  // ===== DB保存（ロール専用ノート） =====
+  const saveNote = async (
+    role: Role,
+    championId: string,
+    status: Status
+  ) => {
+    const existing = localNotes.find(
+      (n) => n.champion_id === championId && n.role === role
+    )
 
     if (existing) {
       if (status === 'NONE') {
-        await supabase
-          .from('room_champion_notes')
-          .delete()
-          .eq('id', existing.id)
-
-        setLocalNotes((prev) =>
-          prev.filter((n) => n.champion_id !== championId)
-        )
+        await supabase.from('room_champion_notes').delete().eq('id', existing.id)
+        setLocalNotes((prev) => prev.filter((n) => n.id !== existing.id))
       } else {
         const { data, error } = await supabase
           .from('room_champion_notes')
@@ -207,11 +338,14 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
       return
     }
 
+    if (status === 'NONE') return
+
     const { data, error } = await supabase
       .from('room_champion_notes')
       .insert({
         room_id: roomId,
         champion_id: championId,
+        role,
         status,
       })
       .select()
@@ -225,74 +359,62 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
           room_id: data.room_id,
           champion_id: data.champion_id,
           status: data.status as Status,
+          role: data.role as Role,
         },
       ])
     }
   }
 
-  // ピック不可を手動でON/OFFする
-  const handleToggleUnavailable = async (championId: string) => {
-    const status = getStatus(championId)
-    if (status === 'PICKED') return
+  // ===== 操作ハンドラ =====
 
-    if (status === 'UNAVAILABLE') {
-      await saveNote(championId, 'NONE')
+  // 手動「不可」トグル（このロール専用）
+  const handleToggleUnavailable = async (role: Role, championId: string) => {
+    const raw = getRawStatus(role, championId)
+    if (raw === 'UNAVAILABLE') {
+      await saveNote(role, championId, 'NONE')
     } else {
-      await saveNote(championId, 'UNAVAILABLE')
+      await saveNote(role, championId, 'UNAVAILABLE')
     }
   }
 
-  // ===== 確定／解除まわり =====
-  const handleConfirmPick = async (championId: string) => {
-    const pool = pools.find((p) => p.champion_id === championId)
-    if (!pool) return
+  // 確定
+  const handleConfirmPick = async (role: Role, championId: string) => {
+    const pickedOfRole = pickedByRole[role]
+    const pickedSomewhere = pickedChampionSet.has(championId)
 
-    const role = pool.role
-
-    if (confirmedRoles.has(role)) {
-      alert(`${role} はすでに確定済みです`)
+    if (pickedOfRole && pickedOfRole !== championId) {
+      alert(`${role} はすでに他のチャンピオンが確定済みです`)
       return
     }
 
-    // 1体をPICKEDに
-    await saveNote(championId, 'PICKED')
+    if (pickedSomewhere && pickedOfRole !== championId) {
+      alert('このチャンピオンは別ロールで既に確定済みです')
+      return
+    }
 
-    // 同ロールの他の候補はUNAVAILABLEに
-    pools
-      .filter((p) => p.role === role && p.champion_id !== championId)
-      .forEach((p) => {
-        saveNote(p.champion_id, 'UNAVAILABLE')
-      })
+    await saveNote(role, championId, 'PICKED')
   }
 
-  const handleCancelConfirm = async (championId: string) => {
-    const pool = pools.find((p) => p.champion_id === championId)
-    if (!pool) return
-
-    const role = pool.role
-
-    // 自分をNONEに
-    await saveNote(championId, 'NONE')
-
-    // 同ロールの候補もまとめてNONEに戻す
-    pools
-      .filter((p) => p.role === role)
-      .forEach((p) => saveNote(p.champion_id, 'NONE'))
+  // 確定解除
+  const handleCancelConfirm = async (role: Role, championId: string) => {
+    const pickedOfRole = pickedByRole[role]
+    if (pickedOfRole !== championId) return
+    await saveNote(role, championId, 'NONE')
   }
 
-  // 通常クリック：候補⇔未設定
-  const handleClickChampion = async (championId: string) => {
-    const status = getStatus(championId)
-    if (status === 'PICKED') return
+  // 候補⇔未設定（ロールごと）
+  const handleClickChampion = async (role: Role, championId: string) => {
+    const status = getStatus(role, championId)
+    if (status === 'PICKED' || status === 'UNAVAILABLE') return
 
-    if (status === 'NONE') {
-      await saveNote(championId, 'PRIORITY')
-    } else if (status === 'PRIORITY') {
-      await saveNote(championId, 'NONE')
+    const raw = getRawStatus(role, championId)
+    if (raw === 'NONE') {
+      await saveNote(role, championId, 'PRIORITY')
+    } else if (raw === 'PRIORITY') {
+      await saveNote(role, championId, 'NONE')
     }
   }
 
-  // ステータスの優先順位（並び順用）
   const statusRank = (s: Status) => {
     switch (s) {
       case 'PICKED':
@@ -308,6 +430,7 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
     }
   }
 
+  // ===== JSX =====
   return (
     <div className="space-y-5 text-sm text-zinc-200">
       {/* 確定済み一覧（5枠固定） */}
@@ -318,7 +441,7 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           {ROLES.map((role) => {
-            const picked = pickedByRole[role]
+            const picked = pickedListByRole[role]
 
             return (
               <div
@@ -346,7 +469,9 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
                       {picked.champion.name}
                     </div>
                     <button
-                      onClick={() => handleCancelConfirm(picked.champion_id)}
+                      onClick={() =>
+                        handleCancelConfirm(role, picked.champion_id)
+                      }
                       className="mt-1 text-[10px] text-red-400 hover:text-red-300"
                     >
                       解除
@@ -363,7 +488,7 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
         </div>
       </section>
 
-      {/* プール一覧（5ロール横並びをキープ：小さい画面は横スクロール） */}
+      {/* プール一覧（5ロール横並び） */}
       <section className="border border-zinc-700 rounded-lg bg-zinc-900/80 p-3 overflow-x-auto">
         <div className="min-w-[900px] grid grid-cols-5 gap-3">
           {ROLES.map((role) => {
@@ -371,14 +496,13 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
             const rolePools = poolsByRole[role] || []
 
             const sortedRolePools = [...rolePools].sort((a, b) => {
-              const sa = getStatus(a.champion_id)
-              const sb = getStatus(b.champion_id)
+              const sa = getStatus(role, a.champion_id)
+              const sb = getStatus(role, b.champion_id)
 
               const ra = statusRank(sa)
               const rb = statusRank(sb)
               if (ra !== rb) return ra - rb
 
-              // 同じステータスなら、得意度の高い順
               if (a.proficiency !== b.proficiency) {
                 return b.proficiency - a.proficiency
               }
@@ -388,7 +512,6 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
 
             return (
               <div key={role} className="flex flex-col gap-1.5">
-                {/* ロール見出し + 表示名 */}
                 <div className="text-center">
                   <div className="text-xs font-semibold text-zinc-100">
                     {role}
@@ -400,20 +523,26 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
                   )}
                 </div>
 
-                {/* チャンピオングリッド */}
                 <div className="grid grid-cols-2 gap-1.5">
                   {sortedRolePools.map((p) => {
-                    const status = getStatus(p.champion_id)
+                    const status = getStatus(role, p.champion_id)
+                    const raw = getRawStatus(role, p.champion_id)
+                    const pickedSomewhere = pickedChampionSet.has(
+                      p.champion_id
+                    )
 
                     return (
                       <div
                         key={p.id}
                         className="flex flex-col items-center gap-0.5 text-[9px]"
                       >
-                        {/* アイコンボタン（幅細め） */}
                         <button
-                          onClick={() => handleClickChampion(p.champion_id)}
-                          disabled={status === 'PICKED'}
+                          onClick={() =>
+                            handleClickChampion(role, p.champion_id)
+                          }
+                          disabled={
+                            status === 'PICKED' || status === 'UNAVAILABLE'
+                          }
                           className={[
                             'relative flex flex-col items-center gap-0.5 p-1 rounded-md border w-full transition',
                             status === 'PICKED'
@@ -425,7 +554,6 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
                                   : 'border-zinc-700 hover:border-zinc-500 hover:bg-zinc-800/40',
                           ].join(' ')}
                         >
-                          {/* 得意度の星 */}
                           <div className="text-[8px] text-amber-300 leading-none">
                             {getProficiencyStars(p.proficiency)}
                           </div>
@@ -442,7 +570,6 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
                             </div>
                           )}
 
-                          {/* ピック不可の × マーク */}
                           {status === 'UNAVAILABLE' && (
                             <div className="absolute inset-0 flex items-center justify-center text-red-500 text-xl font-bold pointer-events-none">
                               ×
@@ -450,34 +577,35 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
                           )}
                         </button>
 
-                        {/* チャンピオン名のみ表示 */}
                         <span className="text-[8px] text-zinc-200 text-center line-clamp-2">
                           {p.champion.name}
                         </span>
 
-                        {/* ピック不可トグル */}
+                        {/* 不可トグル（このロール専用） */}
                         {status !== 'PICKED' && (
                           <button
                             onClick={() =>
-                              handleToggleUnavailable(p.champion_id)
+                              handleToggleUnavailable(role, p.champion_id)
                             }
                             className={
-                              status === 'UNAVAILABLE'
+                              raw === 'UNAVAILABLE'
                                 ? 'text-[8px] text-red-300 hover:text-red-200'
                                 : 'text-[8px] text-zinc-400 hover:text-zinc-200'
                             }
                           >
-                            {status === 'UNAVAILABLE'
-                              ? '不可解除'
-                              : '不可'}
+                            {raw === 'UNAVAILABLE' ? '不可解除' : '不可'}
                           </button>
                         )}
 
-                        {/* 確定／解除ボタン */}
+                        {/* 確定／解除 */}
                         {status !== 'PICKED' ? (
                           <button
-                            onClick={() => handleConfirmPick(p.champion_id)}
-                            disabled={status === 'UNAVAILABLE'}
+                            onClick={() =>
+                              handleConfirmPick(role, p.champion_id)
+                            }
+                            disabled={
+                              status === 'UNAVAILABLE' || pickedSomewhere
+                            }
                             className="text-[8px] text-emerald-300 hover:text-emerald-200 disabled:opacity-40"
                           >
                             確定
@@ -485,7 +613,7 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
                         ) : (
                           <button
                             onClick={() =>
-                              handleCancelConfirm(p.champion_id)
+                              handleCancelConfirm(role, p.champion_id)
                             }
                             className="text-[8px] text-red-400 hover:text-red-300"
                           >
