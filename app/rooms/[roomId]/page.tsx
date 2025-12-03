@@ -61,7 +61,12 @@ export default function RoomPage() {
   const [joinRole, setJoinRole] = useState<Role | ''>('')
   const [joinName, setJoinName] = useState<string>('')
 
-  // ① 最初に roomId を決定する（params → URL の順でトライ）
+  // ルーム編集用
+  const [isEditing, setIsEditing] = useState(false)
+  const [editName, setEditName] = useState('')
+  const [editDescription, setEditDescription] = useState('')
+
+  // ① roomId を決定（params → URL の順でトライ）
   useEffect(() => {
     const p = params as any
     const fromParams: string | undefined = p?.id ?? p?.roomId
@@ -170,7 +175,7 @@ export default function RoomPage() {
         const uid = userData?.user?.id ?? null
         setCurrentUserId(uid)
 
-        // デフォルトの表示名（メールの前半とか）をプリセット
+        // デフォルト表示名
         const defaultName =
           (userData?.user?.user_metadata?.full_name as string | undefined) ||
           (userData?.user?.email
@@ -190,7 +195,10 @@ export default function RoomPage() {
           console.error('failed to fetch room', roomError)
           setErrorMsg('ルーム情報の取得に失敗しました。')
         } else if (roomData) {
-          setRoom(roomData as RoomRow)
+          const r = roomData as RoomRow
+          setRoom(r)
+          setEditName(r.name ?? '')
+          setEditDescription(r.description ?? '')
         }
 
         // メンバー & プール
@@ -276,21 +284,17 @@ export default function RoomPage() {
       return
     }
 
-    // すでに参加済みなら弾く
     if (myMemberRow) {
       alert('このルームにはすでに参加しています。')
       return
     }
 
-    // ロールが埋まっていないかチェック
     if (members.some((m) => m.role === joinRole)) {
       alert('そのロールはすでに他のメンバーが担当しています。')
       return
     }
 
-    const displayName =
-      joinName.trim() ||
-      'NoName'
+    const displayName = joinName.trim() || 'NoName'
 
     const { error } = await supabase.from('room_members').insert({
       room_id: roomId,
@@ -305,8 +309,79 @@ export default function RoomPage() {
       return
     }
 
-    // 即時反映したいので手動で再取得（＋Realtimeでも追いついてくる）
     await fetchMembersAndPools(roomId)
+  }
+
+  // ===== ルーム情報の更新・削除 =====
+  const handleSaveRoomInfo = async () => {
+    if (!roomId || !room) return
+
+    const name = editName.trim()
+    if (!name) {
+      alert('ルーム名を入力してください。')
+      return
+    }
+
+    const { data, error } = await supabase
+      .from('rooms')
+      .update({
+        name,
+        description: editDescription.trim() || null,
+      })
+      .eq('id', roomId)
+      .select('*')
+      .single()
+
+    if (error) {
+      console.error('failed to update room', error)
+      alert('ルーム情報の更新に失敗しました: ' + error.message)
+      return
+    }
+
+    setRoom(data as RoomRow)
+    setIsEditing(false)
+  }
+
+  const handleDeleteRoom = async () => {
+    if (!roomId || !room) return
+
+    const ok = window.confirm(
+      'このルームを削除しますか？（ピック情報も含めて元に戻せません）'
+    )
+    if (!ok) return
+
+    const { error } = await supabase.from('rooms').delete().eq('id', roomId)
+
+    if (error) {
+      console.error('failed to delete room', error)
+      alert('ルーム削除に失敗しました: ' + error.message)
+      return
+    }
+
+    // とりあえずトップに戻す
+    window.location.href = '/'
+  }
+
+  // ===== ピック状態全リセット =====
+  const handleResetAllNotes = async () => {
+    if (!roomId) return
+
+    const ok = window.confirm('全員のピック状態をリセットしますか？')
+    if (!ok) return
+
+    const { error } = await supabase
+      .from('room_champion_notes')
+      .delete()
+      .eq('room_id', roomId)
+
+    if (error) {
+      console.error('failed to reset notes', error)
+      alert('リセットに失敗しました: ' + error.message)
+      return
+    }
+
+    // 親の notes を空に（PickBoard 側はRealtimeで追随）
+    setNotes([])
   }
 
   // ===== 描画 =====
@@ -346,17 +421,46 @@ export default function RoomPage() {
     )
   }
 
+  const isOwner = currentUserId && room.owner_id === currentUserId
+
   return (
     <div className="p-4 md:p-6 space-y-6 text-sm text-zinc-200">
       {/* ヘッダー */}
       <header className="space-y-3 border border-zinc-800 bg-zinc-900/80 rounded-xl px-4 py-3 shadow shadow-black/40">
-        <h1 className="text-xl font-semibold">{room.name}</h1>
-        {room.description && (
-          <p className="text-xs text-zinc-400 whitespace-pre-line">
-            {room.description}
-          </p>
+        {/* ルーム名／説明（編集モードと表示モード） */}
+        {!isEditing ? (
+          <>
+            <h1 className="text-xl font-semibold">{room.name}</h1>
+            {room.description && (
+              <p className="text-xs text-zinc-400 whitespace-pre-line">
+                {room.description}
+              </p>
+            )}
+          </>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] text-zinc-400">ルーム名</label>
+              <input
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="bg-zinc-950 border border-zinc-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/60"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] text-zinc-400">メモ</label>
+              <textarea
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                rows={2}
+                className="bg-zinc-950 border border-zinc-700 rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500/60"
+              />
+            </div>
+          </div>
         )}
 
+        {/* メンバー表示 */}
         <div className="space-y-1">
           <div className="text-xs text-zinc-300">
             メンバー:{' '}
@@ -374,6 +478,57 @@ export default function RoomPage() {
           )}
         </div>
 
+        {/* ボタン群（編集・リセット・削除） */}
+        <div className="flex flex-wrap gap-2 pt-2 border-t border-zinc-800 mt-2">
+          {/* ピック状態リセット */}
+          <button
+            onClick={handleResetAllNotes}
+            className="px-3 py-1 rounded-md border border-zinc-600 text-xs hover:bg-zinc-800"
+          >
+            ピック状態を全リセット
+          </button>
+
+          {/* 編集ボタン */}
+          {isOwner && !isEditing && (
+            <button
+              onClick={() => setIsEditing(true)}
+              className="px-3 py-1 rounded-md border border-emerald-500/60 text-xs text-emerald-300 hover:bg-emerald-500/10"
+            >
+              ルーム名・メモを編集
+            </button>
+          )}
+          {isOwner && isEditing && (
+            <>
+              <button
+                onClick={handleSaveRoomInfo}
+                className="px-3 py-1 rounded-md bg-emerald-500 text-xs text-black hover:bg-emerald-400"
+              >
+                保存
+              </button>
+              <button
+                onClick={() => {
+                  setIsEditing(false)
+                  setEditName(room.name ?? '')
+                  setEditDescription(room.description ?? '')
+                }}
+                className="px-3 py-1 rounded-md border border-zinc-600 text-xs hover:bg-zinc-800"
+              >
+                キャンセル
+              </button>
+            </>
+          )}
+
+          {/* ルーム削除（オーナーのみ） */}
+          {isOwner && (
+            <button
+              onClick={handleDeleteRoom}
+              className="ml-auto px-3 py-1 rounded-md border border-red-500/70 text-xs text-red-300 hover:bg-red-500/10"
+            >
+              ルーム削除
+            </button>
+          )}
+        </div>
+
         {/* ルーム参加フォーム（まだ未参加のときだけ） */}
         {!myMemberRow && (
           <div className="mt-3 border-t border-zinc-800 pt-3 space-y-2">
@@ -388,9 +543,7 @@ export default function RoomPage() {
                 </p>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
                   <div className="flex flex-col gap-1">
-                    <label className="text-[11px] text-zinc-400">
-                      ロール
-                    </label>
+                    <label className="text-[11px] text-zinc-400">ロール</label>
                     <select
                       value={joinRole}
                       onChange={(e) => setJoinRole(e.target.value as Role)}
@@ -420,7 +573,11 @@ export default function RoomPage() {
 
                   <button
                     onClick={handleJoinRoom}
-                    disabled={!joinRole || !currentUserId || availableRoles.length === 0}
+                    disabled={
+                      !joinRole ||
+                      !currentUserId ||
+                      availableRoles.length === 0
+                    }
                     className="px-4 py-2 rounded-md bg-emerald-500 text-black text-sm font-semibold hover:bg-emerald-400 transition disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     このルームに参加
