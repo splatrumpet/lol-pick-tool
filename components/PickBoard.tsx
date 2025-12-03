@@ -282,6 +282,8 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
   }
 
   // 確定済みピック一覧（表示用）
+  // 「このロールのメンバー」と「そのロールでPICKEDされたノート」から、
+  // ぴったり対応するプールを探してくる
   const pickedListByRole: Record<Role, PoolRow | null> = useMemo(() => {
     const result: Record<Role, PoolRow | null> = {
       TOP: null,
@@ -290,18 +292,38 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
       ADC: null,
       SUP: null,
     }
+
     for (const role of ROLES) {
-      const champId = pickedByRole[role]
-      if (!champId) continue
-      const pool = localPools.find(
-        (p) => p.role === role && p.champion_id === champId
-      )
-      if (pool) {
-        result[role] = pool
+      const member = memberByRole[role]
+      if (!member) {
+        result[role] = null
+        continue
       }
+
+      // このロールで PIKCED されているノートを探す
+      const note = localNotes.find(
+        (n) => n.status === 'PICKED' && n.role === role
+      )
+      if (!note) {
+        result[role] = null
+        continue
+      }
+
+      // 「このロール担当のユーザー」が持っているプールの中から、
+      // 該当チャンピオンIDのものを探す
+      const pool = localPools.find(
+        (p) =>
+          p.user_id === member.user_id &&
+          p.role === role &&
+          p.champion_id === note.champion_id
+      )
+
+      result[role] = pool ?? null
     }
+
     return result
-  }, [pickedByRole, localPools])
+  }, [localNotes, localPools, memberByRole])
+
 
   // ===== DB保存（ロール専用ノート） =====
   const saveNote = async (
