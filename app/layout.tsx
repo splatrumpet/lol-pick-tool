@@ -1,6 +1,8 @@
 // src/app/layout.tsx
 import './globals.css'
 import Link from 'next/link'
+import { AuthButton } from '@/components/AuthButton'
+
 
 export const metadata = {
   title: 'LoL Pick Tool',
@@ -34,6 +36,12 @@ export default function RootLayout({
               </div>
               <nav className="flex items-center gap-3 text-xs">
                 <Link
+                  href="/account"
+                  className="px-2 py-1 rounded-md text-zinc-300 hover:text-emerald-300 hover:bg-emerald-500/10 transition"
+                >
+                  アカウント設定
+                </Link>
+                <Link
                   href="/mypage"
                   className="px-2 py-1 rounded-md text-zinc-300 hover:text-emerald-300 hover:bg-emerald-500/10 transition"
                 >
@@ -45,12 +53,7 @@ export default function RootLayout({
                 >
                   ルーム一覧
                 </Link>
-                <Link
-                  href="/login"
-                  className="px-2 py-1 rounded-md text-zinc-300 hover:text-emerald-300 hover:bg-emerald-500/10 transition"
-                >
-                  ログイン
-                </Link>
+                <AuthButton />
               </nav>
             </div>
           </header>

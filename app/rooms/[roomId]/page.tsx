@@ -59,7 +59,7 @@ export default function RoomPage() {
 
   // ルーム参加用フォーム
   const [joinRole, setJoinRole] = useState<Role | ''>('')
-  const [joinName, setJoinName] = useState<string>('')
+  const [joinName, setJoinName] = useState<string>('') // ← /account で設定した表示名をここに入れる
 
   // ルーム編集用
   const [isEditing, setIsEditing] = useState(false)
@@ -172,17 +172,19 @@ export default function RoomPage() {
         if (userError) {
           console.error('auth.getUser error', userError)
         }
-        const uid = userData?.user?.id ?? null
+        const u = userData?.user ?? null
+        const uid = u?.id ?? null
         setCurrentUserId(uid)
 
-        // デフォルト表示名
-        const defaultName =
-          (userData?.user?.user_metadata?.full_name as string | undefined) ||
-          (userData?.user?.email
-            ? userData.user.email.split('@')[0]
-            : '') ||
-          ''
-        setJoinName(defaultName)
+        // ここで /account で設定した display_name を読んで joinName にセット
+        if (u) {
+          const meta = (u.user_metadata || {}) as any
+          const fromMeta =
+            (meta.display_name as string | undefined) ||
+            (meta.full_name as string | undefined)
+          const fromEmail = u.email ? u.email.split('@')[0] : ''
+          setJoinName(fromMeta || fromEmail || '')
+        }
 
         // ルーム情報
         const { data: roomData, error: roomError } = await supabase
@@ -358,7 +360,6 @@ export default function RoomPage() {
       return
     }
 
-    // とりあえずトップに戻す
     window.location.href = '/'
   }
 
@@ -380,7 +381,6 @@ export default function RoomPage() {
       return
     }
 
-    // 親の notes を空に（PickBoard 側はRealtimeで追随）
     setNotes([])
   }
 
@@ -539,7 +539,14 @@ export default function RoomPage() {
             ) : (
               <>
                 <p className="text-xs text-zinc-300">
-                  ロールと表示名を選んで、このルームに参加します。
+                  ロールを選んで、このルームに参加します。
+                </p>
+                <p className="text-[11px] text-zinc-400">
+                  表示名:{' '}
+                  <span className="font-mono text-zinc-100">
+                    {joinName || '未設定'}
+                  </span>{' '}
+                  （/account ページで変更できます）
                 </p>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
                   <div className="flex flex-col gap-1">
@@ -556,19 +563,6 @@ export default function RoomPage() {
                         </option>
                       ))}
                     </select>
-                  </div>
-
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[11px] text-zinc-400">
-                      表示名
-                    </label>
-                    <input
-                      type="text"
-                      value={joinName}
-                      onChange={(e) => setJoinName(e.target.value)}
-                      className="bg-zinc-950 border border-zinc-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/60"
-                      placeholder="例: てらだ / SummonerName"
-                    />
                   </div>
 
                   <button
@@ -597,7 +591,7 @@ export default function RoomPage() {
 
       {/* ピックボード */}
       <PickBoard
-        roomId={roomId}
+        roomId={roomId as string}
         members={members}
         pools={pools}
         notes={notes}

@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { ROLES, Role } from '@/constants/roles'
+import { LogoutButton } from '@/components/LogoutButton'
 
 type Champion = {
   id: string

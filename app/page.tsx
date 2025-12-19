@@ -1,9 +1,11 @@
 // src/app/page.tsx
 import Link from 'next/link'
+import { AuthButton } from '@/components/AuthButton'
+
 
 export default function HomePage() {
   return (
-    <main className="min-h-screen bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 text-zinc-100">
+    <main className="min-h-screen bg-linear-to-b from-zinc-950 via-zinc-900 to-zinc-950 text-zinc-100">
       <div className="max-w-5xl mx-auto px-4 py-10 space-y-10">
         {/* Hero */}
         <section className="space-y-6">
@@ -38,12 +40,7 @@ export default function HomePage() {
             >
               マイプールを編集
             </Link>
-            <Link
-              href="/login"
-              className="text-xs text-zinc-400 hover:text-emerald-300 underline-offset-2 hover:underline"
-            >
-              ログイン / 新規登録
-            </Link>
+            <AuthButton />
           </div>
         </section>
 
