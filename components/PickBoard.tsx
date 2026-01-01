@@ -454,10 +454,10 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
 
   // ===== JSX =====
   return (
-    <div className="space-y-5 text-sm text-zinc-200">
+    <div className="space-y-6 text-sm text-zinc-200">
       {/* 確定済み一覧（5枠固定） */}
-      <section className="border border-zinc-700 rounded-lg p-3 bg-zinc-900/80">
-        <h2 className="text-xs font-semibold mb-2 text-emerald-300">
+      <section className="glass-panel rounded-2xl p-4">
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.2em] mb-3 text-emerald-200/80">
           確定済みピック
         </h2>
 
@@ -468,7 +468,7 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
             return (
               <div
                 key={role}
-                className="flex flex-col items-center gap-1 bg-zinc-900 border border-zinc-700 rounded-md px-2 py-2 min-h-[110px]"
+                className="flex flex-col items-center gap-1 rounded-xl px-2.5 py-2.5 min-h-[120px] border border-white/10 bg-zinc-900/60 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
               >
                 <div className="text-[11px] text-zinc-400 mb-1">
                   {role}
@@ -511,7 +511,7 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
       </section>
 
       {/* プール一覧（5ロール横並び） */}
-      <section className="border border-zinc-700 rounded-lg bg-zinc-900/80 p-3 overflow-x-auto">
+      <section className="glass-panel rounded-2xl p-4 overflow-x-auto">
         <div className="min-w-[900px] grid grid-cols-5 gap-3">
           {ROLES.map((role) => {
             const member = memberByRole[role]
@@ -565,15 +565,15 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
                           disabled={
                             status === 'PICKED' || status === 'UNAVAILABLE'
                           }
-                          className={[
-                            'relative flex flex-col items-center gap-0.5 p-1 rounded-md border w-full transition',
+                        className={[
+                            'relative flex flex-col items-center gap-0.5 p-1 rounded-md border w-full transition-all duration-200',
                             status === 'PICKED'
-                              ? 'border-emerald-400 bg-emerald-500/10 shadow shadow-emerald-500/30'
+                              ? 'border-emerald-400/80 bg-emerald-500/10 shadow-[0_0_18px_-10px_rgba(16,185,129,0.8)]'
                               : status === 'UNAVAILABLE'
                                 ? 'border-red-500/50 bg-red-500/5 opacity-40'
                                 : status === 'PRIORITY'
-                                  ? 'border-blue-400 bg-blue-500/10'
-                                  : 'border-zinc-700 hover:border-zinc-500 hover:bg-zinc-800/40',
+                                  ? 'border-sky-400/60 bg-sky-500/10'
+                                  : 'border-white/10 bg-zinc-900/40 hover:border-white/30 hover:bg-zinc-800/50 hover:-translate-y-0.5',
                           ].join(' ')}
                         >
                           <div className="text-[8px] text-amber-300 leading-none">

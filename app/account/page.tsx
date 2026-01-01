@@ -68,7 +68,7 @@ export default function AccountPage() {
 
   if (!user) {
     return (
-      <div className="p-6 space-y-2 text-sm text-zinc-200">
+      <div className="p-6 md:p-10 max-w-2xl mx-auto space-y-2 text-sm text-zinc-200 fade-in">
         <p>ログインしていません。</p>
         <p className="text-xs text-zinc-400">
           ログイン後、このページで表示名を設定できます。
@@ -78,8 +78,8 @@ export default function AccountPage() {
   }
 
   return (
-    <div className="p-6 space-y-6 text-sm text-zinc-200">
-      <header className="flex items-center justify-between">
+    <div className="p-6 md:p-10 max-w-3xl mx-auto space-y-8 text-sm text-zinc-200 fade-in">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-white/10">
         <div>
           <h1 className="text-lg font-semibold">アカウント設定</h1>
           <p className="text-xs text-zinc-400">
@@ -89,7 +89,7 @@ export default function AccountPage() {
         <LogoutButton />
       </header>
 
-      <section className="border border-zinc-800 rounded-xl bg-zinc-900/80 p-4 space-y-3">
+      <section className="glass-panel rounded-2xl p-5 space-y-4">
         <div className="space-y-1">
           <div className="text-[11px] text-zinc-500">メールアドレス</div>
           <div className="text-sm">{user.email}</div>
@@ -103,7 +103,7 @@ export default function AccountPage() {
             type="text"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
-            className="w-full bg-zinc-950 border border-zinc-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/60"
+            className="w-full bg-zinc-950/70 border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/60"
             placeholder="サモナーネーム"
           />
         </div>
@@ -111,7 +111,7 @@ export default function AccountPage() {
         <button
           onClick={handleSave}
           disabled={saving}
-          className="px-4 py-2 rounded-md bg-emerald-500 text-black text-sm font-semibold hover:bg-emerald-400 disabled:opacity-40"
+          className="px-4 py-2 rounded-md bg-emerald-500 text-black text-sm font-semibold hover:bg-emerald-400 disabled:opacity-40 transition shadow-[0_10px_30px_-18px_rgba(16,185,129,0.9)]"
         >
           {saving ? '保存中…' : '保存する'}
         </button>

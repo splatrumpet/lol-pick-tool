@@ -424,15 +424,17 @@ export default function RoomPage() {
   const isOwner = currentUserId && room.owner_id === currentUserId
 
   return (
-    <div className="p-4 md:p-6 space-y-6 text-sm text-zinc-200">
+    <div className="p-4 md:p-8 space-y-8 text-sm text-zinc-200 max-w-6xl mx-auto fade-in">
       {/* ヘッダー */}
-      <header className="space-y-3 border border-zinc-800 bg-zinc-900/80 rounded-xl px-4 py-3 shadow shadow-black/40">
+      <header className="space-y-4 rounded-2xl px-5 py-4 glass-panel">
         {/* ルーム名／説明（編集モードと表示モード） */}
         {!isEditing ? (
           <>
-            <h1 className="text-xl font-semibold">{room.name}</h1>
+            <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">
+              {room.name}
+            </h1>
             {room.description && (
-              <p className="text-xs text-zinc-400 whitespace-pre-line">
+              <p className="text-sm text-zinc-300 whitespace-pre-line">
                 {room.description}
               </p>
             )}
@@ -445,7 +447,7 @@ export default function RoomPage() {
                 type="text"
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
-                className="bg-zinc-950 border border-zinc-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/60"
+                className="bg-zinc-950/70 border border-white/10 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/60"
               />
             </div>
             <div className="flex flex-col gap-1">
@@ -454,7 +456,7 @@ export default function RoomPage() {
                 value={editDescription}
                 onChange={(e) => setEditDescription(e.target.value)}
                 rows={2}
-                className="bg-zinc-950 border border-zinc-700 rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500/60"
+                className="bg-zinc-950/70 border border-white/10 rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500/60"
               />
             </div>
           </div>
@@ -479,11 +481,11 @@ export default function RoomPage() {
         </div>
 
         {/* ボタン群（編集・リセット・削除） */}
-        <div className="flex flex-wrap gap-2 pt-2 border-t border-zinc-800 mt-2">
+        <div className="flex flex-wrap gap-2 pt-2 border-t border-white/10 mt-2">
           {/* ピック状態リセット */}
           <button
             onClick={handleResetAllNotes}
-            className="px-3 py-1 rounded-md border border-zinc-600 text-xs hover:bg-zinc-800"
+            className="px-3 py-1 rounded-md border border-white/10 text-xs hover:bg-white/5 transition"
           >
             ピック状態を全リセット
           </button>
@@ -492,7 +494,7 @@ export default function RoomPage() {
           {isOwner && !isEditing && (
             <button
               onClick={() => setIsEditing(true)}
-              className="px-3 py-1 rounded-md border border-emerald-500/60 text-xs text-emerald-300 hover:bg-emerald-500/10"
+              className="px-3 py-1 rounded-md border border-emerald-400/60 text-xs text-emerald-200 hover:bg-emerald-500/10 transition"
             >
               ルーム名・メモを編集
             </button>
@@ -501,7 +503,7 @@ export default function RoomPage() {
             <>
               <button
                 onClick={handleSaveRoomInfo}
-                className="px-3 py-1 rounded-md bg-emerald-500 text-xs text-black hover:bg-emerald-400"
+                className="px-3 py-1 rounded-md bg-emerald-500 text-xs text-black hover:bg-emerald-400 transition"
               >
                 保存
               </button>
@@ -511,7 +513,7 @@ export default function RoomPage() {
                   setEditName(room.name ?? '')
                   setEditDescription(room.description ?? '')
                 }}
-                className="px-3 py-1 rounded-md border border-zinc-600 text-xs hover:bg-zinc-800"
+                className="px-3 py-1 rounded-md border border-white/10 text-xs hover:bg-white/5 transition"
               >
                 キャンセル
               </button>
@@ -522,7 +524,7 @@ export default function RoomPage() {
           {isOwner && (
             <button
               onClick={handleDeleteRoom}
-              className="ml-auto px-3 py-1 rounded-md border border-red-500/70 text-xs text-red-300 hover:bg-red-500/10"
+              className="ml-auto px-3 py-1 rounded-md border border-red-500/70 text-xs text-red-300 hover:bg-red-500/10 transition"
             >
               ルーム削除
             </button>
@@ -531,7 +533,7 @@ export default function RoomPage() {
 
         {/* ルーム参加フォーム（まだ未参加のときだけ） */}
         {!myMemberRow && (
-          <div className="mt-3 border-t border-zinc-800 pt-3 space-y-2">
+          <div className="mt-3 border-t border-white/10 pt-3 space-y-2">
             {!currentUserId ? (
               <p className="text-xs text-red-300">
                 ルームに参加するにはログインしてください。
@@ -554,8 +556,8 @@ export default function RoomPage() {
                     <select
                       value={joinRole}
                       onChange={(e) => setJoinRole(e.target.value as Role)}
-                      className="bg-zinc-950 border border-zinc-700 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/60"
-                    >
+                    className="bg-zinc-950/70 border border-white/10 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/60"
+                  >
                       <option value="">選択してください</option>
                       {availableRoles.map((r) => (
                         <option key={r} value={r}>
