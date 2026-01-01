@@ -1,5 +1,5 @@
 // src/lib/supabaseClient.ts
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -34,14 +34,33 @@ const assertClientKeyIsAnon = (key: string) => {
   }
 }
 
-if (!supabaseUrl) {
-  throw new Error('NEXT_PUBLIC_SUPABASE_URL is required.')
+const buildConfigError = (message: string) => {
+  const error = new Error(message)
+  console.error(message)
+  return error
 }
 
-if (!supabaseAnonKey) {
-  throw new Error('NEXT_PUBLIC_SUPABASE_ANON_KEY is required.')
+let supabaseConfigError: Error | null = null
+let supabaseClient: SupabaseClient | null = null
+
+try {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    const missing: string[] = []
+    if (!supabaseUrl) missing.push('NEXT_PUBLIC_SUPABASE_URL')
+    if (!supabaseAnonKey) missing.push('NEXT_PUBLIC_SUPABASE_ANON_KEY')
+    throw buildConfigError(
+      `Supabaseの環境変数が不足しています: ${missing.join(', ')}`
+    )
+  }
+
+  assertClientKeyIsAnon(supabaseAnonKey)
+  supabaseClient = createClient(supabaseUrl, supabaseAnonKey)
+} catch (error) {
+  supabaseConfigError =
+    error instanceof Error
+      ? error
+      : buildConfigError('Supabaseクライアントの初期化に失敗しました。')
 }
 
-assertClientKeyIsAnon(supabaseAnonKey)
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+export const supabase = supabaseClient
+export { supabaseConfigError }

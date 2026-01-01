@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { supabase } from '@/lib/supabaseClient'
+import { supabase, supabaseConfigError } from '@/lib/supabaseClient'
 
 type AuthUser = {
   id: string
@@ -13,10 +13,15 @@ export function AuthButton() {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [initializing, setInitializing] = useState(true)
   const [loggingOut, setLoggingOut] = useState(false)
+  const supabaseReady = !!supabase && !supabaseConfigError
 
   useEffect(() => {
     // ① 初期表示時に一度だけ現在のユーザーを取得
     const init = async () => {
+      if (!supabaseReady || !supabase) {
+        setInitializing(false)
+        return
+      }
       const { data } = await supabase.auth.getUser()
       setUser(data.user ? { id: data.user.id } : null)
       setInitializing(false)
@@ -40,10 +45,14 @@ export function AuthButton() {
     return () => {
       subscription.unsubscribe()
     }
-  }, [])
+  }, [supabaseReady])
 
   const handleLogout = async () => {
     try {
+      if (!supabaseReady || !supabase) {
+        alert('Supabase の設定を確認してください。')
+        return
+      }
       setLoggingOut(true)
       await supabase.auth.signOut()
       // サインアウト後の画面に自動で遷移（トップへ）
@@ -57,6 +66,14 @@ export function AuthButton() {
 
   const baseClass =
     'px-3 py-2 rounded-md border border-emerald-500/60 text-sm text-emerald-300 hover:bg-emerald-500/10 transition'
+
+  if (!supabaseReady || !supabase) {
+    return (
+      <button className={baseClass + ' opacity-60 cursor-not-allowed'} disabled>
+        認証設定エラー
+      </button>
+    )
+  }
 
   // 初期読み込み中（見た目は崩さず、薄いボタンにしておく）
   if (initializing) {

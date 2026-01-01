@@ -2,9 +2,9 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '@/lib/supabaseClient'
+import { supabase, supabaseConfigError } from '@/lib/supabaseClient'
 import { ROLES, Role } from '@/constants/roles'
-import { LogoutButton } from '@/components/LogoutButton'
+import { SupabaseConfigAlert } from '@/components/SupabaseConfigAlert'
 
 type Champion = {
   id: string
@@ -50,6 +50,7 @@ export default function MyPage() {
   const [champions, setChampions] = useState<Champion[]>([])
   const [pools, setPools] = useState<PoolRow[]>([])
   const [loading, setLoading] = useState(true)
+  const supabaseReady = !!supabase && !supabaseConfigError
 
   // 編集用
   const [selectedChampionId, setSelectedChampionId] = useState<string>('')
@@ -66,6 +67,10 @@ export default function MyPage() {
 
   useEffect(() => {
     const init = async () => {
+      if (!supabaseReady || !supabase) {
+        setLoading(false)
+        return
+      }
       setLoading(true)
       const { data: userData } = await supabase.auth.getUser()
       if (!userData.user) {
@@ -107,7 +112,7 @@ export default function MyPage() {
     }
 
     init()
-  }, [])
+  }, [supabaseReady])
 
   // 検索で絞り込んだチャンピオン一覧（ひらがな & 英字）
   const filteredChampions = useMemo(() => {
@@ -146,6 +151,10 @@ export default function MyPage() {
 
   // 通常モード：1体追加
   const handleAddSingle = async () => {
+    if (!supabaseReady || !supabase) {
+      alert('Supabase の設定を確認してください。')
+      return
+    }
     if (!user || !selectedChampionId) return
 
     const { data, error } = await supabase
@@ -184,6 +193,10 @@ export default function MyPage() {
 
   // 一括モード：複数追加
   const handleAddBulk = async () => {
+    if (!supabaseReady || !supabase) {
+      alert('Supabase の設定を確認してください。')
+      return
+    }
     if (!user || bulkSelectedChampionIds.length === 0) return
 
     // すでに同ロールで登録済みのチャンピオンは除外
@@ -233,6 +246,10 @@ export default function MyPage() {
   }
 
   const handleDeletePool = async (id: string) => {
+    if (!supabaseReady || !supabase) {
+      alert('Supabase の設定を確認してください。')
+      return
+    }
     const ok = window.confirm('このエントリを削除しますか？')
     if (!ok) return
 
@@ -279,6 +296,14 @@ export default function MyPage() {
     return (
       <div className="py-6 text-sm text-zinc-400">
         読み込み中...
+      </div>
+    )
+  }
+
+  if (!supabaseReady || !supabase) {
+    return (
+      <div className="py-6">
+        <SupabaseConfigAlert detail={supabaseConfigError?.message ?? undefined} />
       </div>
     )
   }

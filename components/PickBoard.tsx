@@ -2,7 +2,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '@/lib/supabaseClient'
+import { supabase, supabaseConfigError } from '@/lib/supabaseClient'
 import { ROLES, Role } from '@/constants/roles'
 
 type Status = 'NONE' | 'PRIORITY' | 'PICKED' | 'UNAVAILABLE'
@@ -54,6 +54,7 @@ const getProficiencyStars = (p: number) => {
 export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
   // ===== ノート（ピック状態） =====
   const [localNotes, setLocalNotes] = useState<NoteRow[]>(notes)
+  const supabaseReady = !!supabase && !supabaseConfigError
 
   useEffect(() => {
     setLocalNotes(notes)
@@ -73,7 +74,7 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
 
   // room_members + user_champion_pools を取り直す関数
   const fetchMembersAndPools = async () => {
-    if (!roomId) return
+    if (!roomId || !supabaseReady || !supabase) return
 
     // メンバー一覧
     const { data: memberRows, error: memberError } = await supabase
@@ -135,10 +136,11 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
 
   // ===== Realtime購読（他ブラウザと同期） =====
   useEffect(() => {
-    if (!roomId) return
+    if (!roomId || !supabaseReady || !supabase) return
 
     // ---- ノート用（ピック状態） ----
     const fetchNotes = async () => {
+      if (!supabaseReady || !supabase) return
       const { data, error } = await supabase
         .from('room_champion_notes')
         .select('*')
@@ -202,7 +204,7 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
       supabase.removeChannel(notesChannel)
       supabase.removeChannel(membersChannel)
     }
-  }, [roomId])
+  }, [roomId, supabaseReady])
 
   // ===== 集計 =====
 
@@ -334,6 +336,10 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
     const existing = localNotes.find(
       (n) => n.champion_id === championId && n.role === role
     )
+    if (!supabaseReady || !supabase) {
+      alert('Supabase の設定を確認してください。')
+      return
+    }
 
     if (existing) {
       if (status === 'NONE') {

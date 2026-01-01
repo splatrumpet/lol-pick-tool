@@ -3,7 +3,8 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabaseClient'
+import { supabase, supabaseConfigError } from '@/lib/supabaseClient'
+import { SupabaseConfigAlert } from '@/components/SupabaseConfigAlert'
 
 type Room = {
   id: string
@@ -17,12 +18,17 @@ export default function RoomsPage() {
   const [user, setUser] = useState<any>(null)
   const [rooms, setRooms] = useState<Room[]>([])
   const [loading, setLoading] = useState(true)
+  const supabaseReady = !!supabase && !supabaseConfigError
 
   const [newRoomName, setNewRoomName] = useState('')
   const [newRoomNote, setNewRoomNote] = useState('')
 
   useEffect(() => {
     const init = async () => {
+      if (!supabaseReady || !supabase) {
+        setLoading(false)
+        return
+      }
       setLoading(true)
       const { data: userData } = await supabase.auth.getUser()
       if (!userData.user) {
@@ -80,9 +86,13 @@ export default function RoomsPage() {
     }
 
     init()
-  }, [])
+  }, [supabaseReady])
 
   const handleCreateRoom = async () => {
+    if (!supabaseReady || !supabase) {
+      alert('Supabase の設定を確認してください。')
+      return
+    }
     if (!user) {
       alert('ログインしてください')
       return
@@ -115,6 +125,14 @@ export default function RoomsPage() {
     return (
       <div className="py-6">
         <div className="text-sm text-zinc-400">読み込み中...</div>
+      </div>
+    )
+  }
+
+  if (!supabaseReady || !supabase) {
+    return (
+      <div className="py-6">
+        <SupabaseConfigAlert detail={supabaseConfigError?.message ?? undefined} />
       </div>
     )
   }

@@ -3,7 +3,8 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabaseClient'
+import { supabase, supabaseConfigError } from '@/lib/supabaseClient'
+import { SupabaseConfigAlert } from '@/components/SupabaseConfigAlert'
 
 type Mode = 'login' | 'signup'
 
@@ -15,22 +16,33 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const supabaseReady = !!supabase && !supabaseConfigError
+  const formDisabled = loading || !supabaseReady
 
   useEffect(() => {
     const checkUser = async () => {
+      if (!supabaseReady || !supabase) return
       const { data } = await supabase.auth.getUser()
       if (data.user) {
         router.replace('/')
       }
     }
     checkUser()
-  }, [router])
+  }, [router, supabaseReady])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setMessage(null)
     setErrorMessage(null)
+
+    if (!supabaseReady || !supabase) {
+      setErrorMessage(
+        '認証環境の設定が不足しているため、ログイン・登録を実行できません。'
+      )
+      setLoading(false)
+      return
+    }
 
     try {
       if (mode === 'login') {
@@ -83,6 +95,10 @@ export default function LoginPage() {
           </p>
         </header>
 
+        {!supabaseReady && (
+          <SupabaseConfigAlert detail={supabaseConfigError?.message ?? undefined} />
+        )}
+
         {/* タブ切り替え */}
         <div className="flex text-xs rounded-full bg-zinc-950/80 border border-zinc-800 p-1">
           <button
@@ -124,33 +140,35 @@ export default function LoginPage() {
           <div className="flex flex-col gap-1">
             <label className="text-[11px] text-zinc-400">メールアドレス</label>
             <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="bg-zinc-950 border border-zinc-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/60 focus:border-emerald-500/60"
-              placeholder="you@example.com"
-            />
-          </div>
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            disabled={!supabaseReady}
+            className="bg-zinc-950 border border-zinc-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/60 focus:border-emerald-500/60"
+            placeholder="you@example.com"
+          />
+        </div>
 
           <div className="flex flex-col gap-1">
             <label className="text-[11px] text-zinc-400">パスワード</label>
             <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="bg-zinc-950 border border-zinc-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/60 focus:border-emerald-500/60"
-              placeholder="8文字以上を推奨"
-            />
-          </div>
+            type="password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            disabled={!supabaseReady}
+            className="bg-zinc-950 border border-zinc-700 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/60 focus:border-emerald-500/60"
+            placeholder="8文字以上を推奨"
+          />
+        </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full mt-2 px-4 py-2.5 rounded-md bg-emerald-500 text-black text-sm font-medium hover:bg-emerald-400 transition shadow shadow-emerald-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading
+        <button
+          type="submit"
+          disabled={formDisabled}
+          className="w-full mt-2 px-4 py-2.5 rounded-md bg-emerald-500 text-black text-sm font-medium hover:bg-emerald-400 transition shadow shadow-emerald-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {loading
               ? mode === 'login'
                 ? 'ログイン中...'
                 : '登録中...'

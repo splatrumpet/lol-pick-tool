@@ -3,9 +3,10 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { useParams } from 'next/navigation'
-import { supabase } from '@/lib/supabaseClient'
+import { supabase, supabaseConfigError } from '@/lib/supabaseClient'
 import { PickBoard } from '@/components/PickBoard'
 import { ROLES, Role } from '@/constants/roles'
+import { SupabaseConfigAlert } from '@/components/SupabaseConfigAlert'
 
 type RoomRow = {
   id: string
@@ -56,6 +57,7 @@ export default function RoomPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const supabaseReady = !!supabase && !supabaseConfigError
 
   // ルーム参加用フォーム
   const [joinRole, setJoinRole] = useState<Role | ''>('')
@@ -92,6 +94,7 @@ export default function RoomPage() {
 
   // ===== 共通ロード関数（メンバー & プール） =====
   const fetchMembersAndPools = async (targetRoomId: string) => {
+    if (!supabaseReady || !supabase) return
     const { data: memberRows, error: memberError } = await supabase
       .from('room_members')
       .select('id, room_id, user_id, display_name, role')
@@ -167,6 +170,10 @@ export default function RoomPage() {
       setErrorMsg(null)
 
       try {
+        if (!supabaseReady || !supabase) {
+          setErrorMsg('Supabase の設定を確認してください。')
+          return
+        }
         const { data: userData, error: userError } =
           await supabase.auth.getUser()
         if (userError) {
@@ -235,11 +242,11 @@ export default function RoomPage() {
     }
 
     init()
-  }, [roomId])
+  }, [roomId, supabaseReady])
 
   // ===== Realtime: room_members 変化でメンバー＆プールを再取得 =====
   useEffect(() => {
-    if (!roomId) return
+    if (!roomId || !supabaseReady || !supabase) return
 
     const channel = supabase
       .channel(`room-${roomId}-members-header`)
@@ -260,7 +267,7 @@ export default function RoomPage() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [roomId])
+  }, [roomId, supabaseReady])
 
   // ===== 自分のメンバー情報・空きロール =====
   const myMemberRow = useMemo(
@@ -279,6 +286,10 @@ export default function RoomPage() {
     if (!roomId) return
     if (!currentUserId) {
       alert('ルームに参加するにはログインが必要です。')
+      return
+    }
+    if (!supabaseReady || !supabase) {
+      alert('Supabase の設定を確認してください。')
       return
     }
     if (!joinRole) {
@@ -316,6 +327,10 @@ export default function RoomPage() {
 
   // ===== ルーム情報の更新・削除 =====
   const handleSaveRoomInfo = async () => {
+    if (!supabaseReady || !supabase) {
+      alert('Supabase の設定を確認してください。')
+      return
+    }
     if (!roomId || !room) return
 
     const name = editName.trim()
@@ -345,6 +360,10 @@ export default function RoomPage() {
   }
 
   const handleDeleteRoom = async () => {
+    if (!supabaseReady || !supabase) {
+      alert('Supabase の設定を確認してください。')
+      return
+    }
     if (!roomId || !room) return
 
     const ok = window.confirm(
@@ -365,6 +384,10 @@ export default function RoomPage() {
 
   // ===== ピック状態全リセット =====
   const handleResetAllNotes = async () => {
+    if (!supabaseReady || !supabase) {
+      alert('Supabase の設定を確認してください。')
+      return
+    }
     if (!roomId) return
 
     const ok = window.confirm('全員のピック状態をリセットしますか？')
@@ -398,6 +421,14 @@ export default function RoomPage() {
     return (
       <div className="p-6 text-sm text-zinc-300">
         ルーム情報を読み込み中です…
+      </div>
+    )
+  }
+
+  if (!supabaseReady || !supabase) {
+    return (
+      <div className="p-6">
+        <SupabaseConfigAlert detail={supabaseConfigError?.message ?? undefined} />
       </div>
     )
   }

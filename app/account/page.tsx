@@ -2,7 +2,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabaseClient'
+import { supabase, supabaseConfigError } from '@/lib/supabaseClient'
+import { SupabaseConfigAlert } from '@/components/SupabaseConfigAlert'
 import { LogoutButton } from '@/components/LogoutButton'
 
 export default function AccountPage() {
@@ -10,9 +11,14 @@ export default function AccountPage() {
   const [displayName, setDisplayName] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const supabaseReady = !!supabase && !supabaseConfigError
 
   useEffect(() => {
     const init = async () => {
+      if (!supabaseReady || !supabase) {
+        setLoading(false)
+        return
+      }
       setLoading(true)
       const { data } = await supabase.auth.getUser()
       const u = data.user
@@ -33,9 +39,13 @@ export default function AccountPage() {
     }
 
     init()
-  }, [])
+  }, [supabaseReady])
 
   const handleSave = async () => {
+    if (!supabaseReady || !supabase) {
+      alert('Supabase の設定を確認してください。')
+      return
+    }
     if (!user) return
     const name = displayName.trim()
     if (!name) {
@@ -62,6 +72,14 @@ export default function AccountPage() {
     return (
       <div className="p-6 text-sm text-zinc-300">
         アカウント情報を読み込み中です…
+      </div>
+    )
+  }
+
+  if (!supabaseReady || !supabase) {
+    return (
+      <div className="p-6">
+        <SupabaseConfigAlert detail={supabaseConfigError?.message ?? undefined} />
       </div>
     )
   }

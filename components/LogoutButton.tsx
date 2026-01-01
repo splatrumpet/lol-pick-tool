@@ -2,13 +2,18 @@
 'use client'
 
 import { useState } from 'react'
-import { supabase } from '@/lib/supabaseClient'
+import { supabase, supabaseConfigError } from '@/lib/supabaseClient'
 
 export function LogoutButton() {
   const [loading, setLoading] = useState(false)
+  const supabaseReady = !!supabase && !supabaseConfigError
 
   const handleLogout = async () => {
     try {
+      if (!supabaseReady || !supabase) {
+        alert('Supabase の設定を確認してください。')
+        return
+      }
       setLoading(true)
       // セッション削除
       await supabase.auth.signOut()
@@ -24,7 +29,7 @@ export function LogoutButton() {
   return (
     <button
       onClick={handleLogout}
-      disabled={loading}
+      disabled={loading || !supabaseReady}
       className="px-3 py-2 rounded-md border border-zinc-600 text-sm hover:bg-zinc-800 disabled:opacity-40"
     >
       {loading ? 'ログアウト中…' : 'ログアウト'}
