@@ -80,8 +80,10 @@ export default function HomePage() {
                 <span className="text-emerald-200">Live Sync</span>
               </div>
               <div className="rounded-xl border border-white/10 bg-black/30 p-3 sm:p-4">
-                <div className="origin-top-left scale-[0.82] sm:scale-[0.9]">
-                  <PickBoardPreview />
+                <div className="flex justify-center">
+                  <div className="origin-center scale-[0.82] sm:scale-[0.9]">
+                    <PickBoardPreview />
+                  </div>
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-2 text-[11px] text-zinc-400">
