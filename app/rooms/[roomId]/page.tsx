@@ -274,6 +274,21 @@ export default function RoomPage() {
     [members]
   )
 
+  const changeableRoles = useMemo(() => {
+    const taken = new Set(members.map((m) => m.role))
+    return ROLES.filter((r) => !taken.has(r) || myMemberRow?.role === r)
+  }, [members, myMemberRow])
+
+  const [changeRole, setChangeRole] = useState<Role | ''>('')
+
+  useEffect(() => {
+    if (myMemberRow) {
+      setChangeRole(myMemberRow.role)
+    } else {
+      setChangeRole('')
+    }
+  }, [myMemberRow])
+
   // ===== ルーム参加ハンドラ =====
   const handleJoinRoom = async () => {
     if (!roomId) return
@@ -308,6 +323,59 @@ export default function RoomPage() {
     if (error) {
       console.error('failed to join room', error)
       alert('ルーム参加に失敗しました: ' + error.message)
+      return
+    }
+
+    await fetchMembersAndPools(roomId)
+  }
+
+  const handleChangeMyRole = async () => {
+    if (!roomId || !myMemberRow || !changeRole) return
+
+    if (changeRole === myMemberRow.role) {
+      alert('すでにそのロールを担当しています。')
+      return
+    }
+
+    if (
+      members.some(
+        (m) => m.role === changeRole && m.id !== myMemberRow.id
+      )
+    ) {
+      alert('そのロールはすでに他のメンバーが担当しています。')
+      return
+    }
+
+    const { error } = await supabase
+      .from('room_members')
+      .update({ role: changeRole })
+      .eq('id', myMemberRow.id)
+
+    if (error) {
+      console.error('failed to change role', error)
+      alert('ロール変更に失敗しました: ' + error.message)
+      return
+    }
+
+    await fetchMembersAndPools(roomId)
+  }
+
+  const handleRemoveMember = async (target: MemberRow) => {
+    if (!roomId) return
+
+    const ok = window.confirm(
+      `${target.display_name} のロールを外しますか？`
+    )
+    if (!ok) return
+
+    const { error } = await supabase
+      .from('room_members')
+      .delete()
+      .eq('id', target.id)
+
+    if (error) {
+      console.error('failed to remove member', error)
+      alert('ロールを外せませんでした: ' + error.message)
       return
     }
 
@@ -479,6 +547,76 @@ export default function RoomPage() {
             </div>
           )}
         </div>
+
+        {myMemberRow && (
+          <div className="mt-2 border border-white/10 rounded-lg p-3 space-y-2 bg-white/5">
+            <div className="text-[11px] text-zinc-200 font-semibold">
+              自分のロールを変更・解除
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] text-zinc-400">ロール</label>
+                <select
+                  value={changeRole}
+                  onChange={(e) => setChangeRole(e.target.value as Role)}
+                  className="bg-zinc-950/70 border border-white/10 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/60"
+                >
+                  {changeableRoles.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleChangeMyRole}
+                  disabled={!changeRole}
+                  className="px-3 py-2 rounded-md bg-emerald-500 text-black text-xs font-semibold hover:bg-emerald-400 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  ロールを変更
+                </button>
+                <button
+                  onClick={() => handleRemoveMember(myMemberRow)}
+                  className="px-3 py-2 rounded-md border border-red-500/70 text-xs text-red-300 hover:bg-red-500/10 transition"
+                >
+                  ロールを外す
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isOwner && members.length > 0 && (
+          <div className="mt-2 border border-amber-500/30 rounded-lg p-3 space-y-2 bg-amber-500/5">
+            <div className="text-[11px] text-amber-200 font-semibold">
+              オーナー用メンバー管理
+            </div>
+            <div className="space-y-1">
+              {members.map((m) => (
+                <div
+                  key={m.id}
+                  className="flex items-center gap-2 text-xs border border-white/10 rounded-md px-2 py-1 bg-black/20"
+                >
+                  <div className="flex-1">
+                    <span className="font-semibold">{m.display_name}</span>{' '}
+                    <span className="text-zinc-400">({m.role})</span>
+                  </div>
+                  {m.user_id === currentUserId ? (
+                    <span className="text-[10px] text-emerald-300">あなた</span>
+                  ) : (
+                    <button
+                      onClick={() => handleRemoveMember(m)}
+                      className="px-2 py-1 rounded-md border border-red-500/70 text-[11px] text-red-300 hover:bg-red-500/10 transition"
+                    >
+                      ロールを外す
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* ボタン群（編集・リセット・削除） */}
         <div className="flex flex-wrap gap-2 pt-2 border-t border-white/10 mt-2">
