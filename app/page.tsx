@@ -13,7 +13,7 @@ export default function HomePage() {
           </div>
         </header>
 
-        <section className="grid gap-10 lg:grid-cols-[1.1fr_0.9fr] items-center">
+        <section className="grid gap-10 lg:grid-cols-[0.85fr_1.15fr] items-center">
           <div className="space-y-6 fade-in">
             <div className="space-y-4">
               <p className="text-[11px] uppercase tracking-[0.35em] text-emerald-200/80">
@@ -81,23 +81,23 @@ export default function HomePage() {
               </div>
               <div className="rounded-xl border border-white/10 bg-black/30 p-3 sm:p-4">
                 <div className="flex justify-center">
-                  <div className="origin-center scale-[0.82] sm:scale-[0.9]">
+                  <div className="origin-center scale-[0.8] sm:scale-[0.9]">
                     <PickBoardPreview />
                   </div>
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-2 text-[11px] text-zinc-400">
-                <div className="flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-sky-300" />
-                  候補
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[12px] text-zinc-200">
+                <div className="flex items-center gap-2 rounded-full border border-sky-300/30 bg-sky-500/10 px-3 py-1">
+                  <span className="h-2.5 w-2.5 rounded-full bg-sky-300" />
+                  <span className="font-semibold text-sky-200">候補</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-emerald-300" />
-                  確定
+                <div className="flex items-center gap-2 rounded-full border border-emerald-300/30 bg-emerald-500/10 px-3 py-1">
+                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-300" />
+                  <span className="font-semibold text-emerald-200">確定</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-rose-300" />
-                  ピック不可
+                <div className="flex items-center gap-2 rounded-full border border-rose-300/30 bg-rose-500/10 px-3 py-1">
+                  <span className="h-2.5 w-2.5 rounded-full bg-rose-300" />
+                  <span className="font-semibold text-rose-200">ピック不可</span>
                 </div>
               </div>
             </div>

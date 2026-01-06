@@ -524,7 +524,12 @@ export const PickBoard = ({
 
       {/* プール一覧（5ロール横並び） */}
       <section className="glass-panel rounded-2xl p-4 overflow-x-auto">
-        <div className="min-w-[900px] grid grid-cols-5 gap-3">
+        <div
+          className={[
+            preview ? 'w-full min-w-0' : 'min-w-[900px]',
+            'grid grid-cols-5 gap-3',
+          ].join(' ')}
+        >
           {ROLES.map((role) => {
             const member = memberByRole[role]
             const rolePools = poolsByRole[role] || []

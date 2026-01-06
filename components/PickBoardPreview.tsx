@@ -166,12 +166,12 @@ const pools: PoolRow[] = [
   },
   {
     id: 'p-adc-2',
-    champion_id: 'KaiSa',
+    champion_id: 'Kaisa',
     role: 'ADC',
     proficiency: 2,
     user_id: 'u-adc',
     display_name: 'Rin',
-    champion: { id: 'KaiSa', name: "Kai'Sa", icon_url: iconUrl('KaiSa') },
+    champion: { id: 'Kaisa', name: "Kai'Sa", icon_url: iconUrl('Kaisa') },
   },
   {
     id: 'p-adc-3',
