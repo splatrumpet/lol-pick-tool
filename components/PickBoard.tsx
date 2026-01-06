@@ -5,9 +5,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { ROLES, Role } from '@/constants/roles'
 
-type Status = 'NONE' | 'PRIORITY' | 'PICKED' | 'UNAVAILABLE'
+export type Status = 'NONE' | 'PRIORITY' | 'PICKED' | 'UNAVAILABLE'
 
-type PoolRow = {
+export type PoolRow = {
   id: string
   champion_id: string
   role: Role
@@ -21,7 +21,7 @@ type PoolRow = {
   }
 }
 
-type NoteRow = {
+export type NoteRow = {
   id?: string
   room_id: string
   champion_id: string
@@ -29,7 +29,7 @@ type NoteRow = {
   role: Role | null
 }
 
-type MemberRow = {
+export type MemberRow = {
   id: string
   room_id: string
   user_id: string
@@ -37,11 +37,12 @@ type MemberRow = {
   role: Role
 }
 
-type Props = {
+export type PickBoardProps = {
   roomId: string
   members: MemberRow[]
   pools: PoolRow[]
   notes: NoteRow[]
+  preview?: boolean
 }
 
 const getProficiencyStars = (p: number) => {
@@ -51,7 +52,13 @@ const getProficiencyStars = (p: number) => {
   return ''
 }
 
-export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
+export const PickBoard = ({
+  roomId,
+  members,
+  pools,
+  notes,
+  preview = false,
+}: PickBoardProps) => {
   // ===== ノート（ピック状態） =====
   const [localNotes, setLocalNotes] = useState<NoteRow[]>(notes)
 
@@ -73,7 +80,7 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
 
   // room_members + user_champion_pools を取り直す関数
   const fetchMembersAndPools = async () => {
-    if (!roomId) return
+    if (!roomId || preview) return
 
     // メンバー一覧
     const { data: memberRows, error: memberError } = await supabase
@@ -135,7 +142,7 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
 
   // ===== Realtime購読（他ブラウザと同期） =====
   useEffect(() => {
-    if (!roomId) return
+    if (!roomId || preview) return
 
     // ---- ノート用（ピック状態） ----
     const fetchNotes = async () => {
@@ -202,7 +209,7 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
       supabase.removeChannel(notesChannel)
       supabase.removeChannel(membersChannel)
     }
-  }, [roomId])
+  }, [roomId, preview])
 
   // ===== 集計 =====
 
@@ -331,6 +338,7 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
     championId: string,
     status: Status
   ) => {
+    if (preview) return
     const existing = localNotes.find(
       (n) => n.champion_id === championId && n.role === role
     )
@@ -391,6 +399,7 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
 
   // 手動「不可」トグル（このロール専用）
   const handleToggleUnavailable = async (role: Role, championId: string) => {
+    if (preview) return
     const raw = getRawStatus(role, championId)
     if (raw === 'UNAVAILABLE') {
       await saveNote(role, championId, 'NONE')
@@ -401,6 +410,7 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
 
   // 確定
   const handleConfirmPick = async (role: Role, championId: string) => {
+    if (preview) return
     const pickedOfRole = pickedByRole[role]
     const pickedSomewhere = pickedChampionSet.has(championId)
 
@@ -419,6 +429,7 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
 
   // 確定解除
   const handleCancelConfirm = async (role: Role, championId: string) => {
+    if (preview) return
     const pickedOfRole = pickedByRole[role]
     if (pickedOfRole !== championId) return
     await saveNote(role, championId, 'NONE')
@@ -426,6 +437,7 @@ export const PickBoard = ({ roomId, members, pools, notes }: Props) => {
 
   // 候補⇔未設定（ロールごと）
   const handleClickChampion = async (role: Role, championId: string) => {
+    if (preview) return
     const status = getStatus(role, championId)
     if (status === 'PICKED' || status === 'UNAVAILABLE') return
 
