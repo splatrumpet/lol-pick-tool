@@ -7,6 +7,71 @@ import { supabase } from '@/lib/supabaseClient'
 import { PickBoard } from '@/components/PickBoard'
 import { ROLES, Role } from '@/constants/roles'
 
+const ROLE_ORDER: Record<Role, number> = {
+  TOP: 0,
+  JG: 1,
+  MID: 2,
+  ADC: 3,
+  SUP: 4,
+}
+
+const resolveRoomId = (params: ReturnType<typeof useParams>): string | null => {
+  const p = params as { id?: string; roomId?: string } | null
+  const fromParams: string | undefined = p?.id ?? p?.roomId
+  if (fromParams) return fromParams
+
+  if (typeof window === 'undefined') return null
+  const match = window.location.pathname.match(/\/rooms\/([^\/?#]+)/)
+  return match?.[1] ?? null
+}
+
+const sortMembersByRole = (rows: MemberRow[]) =>
+  [...rows].sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role])
+
+const mapPools = (poolData: any[], membersData: MemberRow[]): PoolRow[] =>
+  poolData
+    .map((p: any) => {
+      const member = membersData.find((m) => m.user_id === p.user_id)
+      if (!member || member.role !== p.role) return null
+
+      return {
+        id: p.id,
+        champion_id: p.champion_id,
+        role: p.role as Role,
+        proficiency: p.proficiency,
+        user_id: p.user_id,
+        display_name: member.display_name ?? '',
+        champion: {
+          id: p.champions.id,
+          name: p.champions.name,
+          icon_url: p.champions.icon_url,
+        },
+      } as PoolRow
+    })
+    .filter((p): p is PoolRow => p !== null)
+
+const mapNotes = (noteRows: any[]): NoteRow[] =>
+  noteRows.map((n: any) => ({
+    id: n.id,
+    room_id: n.room_id,
+    champion_id: n.champion_id,
+    status: n.status,
+    role: (n.role ?? null) as Role | null,
+  }))
+
+const getJoinNameFromUser = (user: {
+  user_metadata?: Record<string, unknown>
+  email?: string | null
+} | null) => {
+  if (!user) return ''
+  const meta = user.user_metadata || {}
+  const fromMeta =
+    (meta.display_name as string | undefined) ||
+    (meta.full_name as string | undefined)
+  const fromEmail = user.email ? user.email.split('@')[0] : ''
+  return fromMeta || fromEmail || ''
+}
+
 type RoomRow = {
   id: string
   name: string
@@ -68,21 +133,10 @@ export default function RoomPage() {
 
   // ① roomId を決定（params → URL の順でトライ）
   useEffect(() => {
-    const p = params as any
-    const fromParams: string | undefined = p?.id ?? p?.roomId
-
-    if (fromParams) {
-      setRoomId(fromParams)
+    const resolved = resolveRoomId(params)
+    if (resolved) {
+      setRoomId(resolved)
       return
-    }
-
-    if (typeof window !== 'undefined') {
-      const path = window.location.pathname
-      const match = path.match(/\/rooms\/([^\/?#]+)/)
-      if (match && match[1]) {
-        setRoomId(match[1])
-        return
-      }
     }
 
     console.error('roomId could not be resolved from params or URL', params)
@@ -103,17 +157,9 @@ export default function RoomPage() {
       return
     }
 
-    const membersData = (memberRows || []) as MemberRow[]
-
-    const roleOrder: Record<Role, number> = {
-      TOP: 0,
-      JG: 1,
-      MID: 2,
-      ADC: 3,
-      SUP: 4,
-    }
-    membersData.sort((a, b) => roleOrder[a.role] - roleOrder[b.role])
-
+    const membersData = sortMembersByRole(
+      (memberRows || []) as MemberRow[]
+    )
     setMembers(membersData)
 
     const userIds = membersData.map((m) => m.user_id)
@@ -133,29 +179,7 @@ export default function RoomPage() {
       return
     }
 
-    const mappedPools: PoolRow[] = (poolData || [])
-      .map((p: any) => {
-        const member = membersData.find((m) => m.user_id === p.user_id)
-        if (!member) return null
-        if (member.role !== p.role) return null
-
-        return {
-          id: p.id,
-          champion_id: p.champion_id,
-          role: p.role as Role,
-          proficiency: p.proficiency,
-          user_id: p.user_id,
-          display_name: member.display_name ?? '',
-          champion: {
-            id: p.champions.id,
-            name: p.champions.name,
-            icon_url: p.champions.icon_url,
-          },
-        } as PoolRow
-      })
-      .filter((p): p is PoolRow => p !== null)
-
-    setPools(mappedPools)
+    setPools(mapPools(poolData || [], membersData))
   }
 
   // ===== 初期ロード（roomId が決まったあとに動く） =====
@@ -172,19 +196,11 @@ export default function RoomPage() {
         if (userError) {
           console.error('auth.getUser error', userError)
         }
-        const u = userData?.user ?? null
-        const uid = u?.id ?? null
-        setCurrentUserId(uid)
+        const user = userData?.user ?? null
+        setCurrentUserId(user?.id ?? null)
 
         // ここで /account で設定した display_name を読んで joinName にセット
-        if (u) {
-          const meta = (u.user_metadata || {}) as any
-          const fromMeta =
-            (meta.display_name as string | undefined) ||
-            (meta.full_name as string | undefined)
-          const fromEmail = u.email ? u.email.split('@')[0] : ''
-          setJoinName(fromMeta || fromEmail || '')
-        }
+        setJoinName(getJoinNameFromUser(user))
 
         // ルーム情報
         const { data: roomData, error: roomError } = await supabase
@@ -216,15 +232,7 @@ export default function RoomPage() {
           console.error('failed to fetch notes', noteError)
           setErrorMsg('ピック情報の取得に失敗しました。')
         } else {
-          setNotes(
-            (noteRows || []).map((n: any) => ({
-              id: n.id,
-              room_id: n.room_id,
-              champion_id: n.champion_id,
-              status: n.status,
-              role: (n.role ?? null) as Role | null,
-            }))
-          )
+          setNotes(mapNotes(noteRows || []))
         }
       } catch (e) {
         console.error('init room error', e)
