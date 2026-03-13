@@ -1,5 +1,4 @@
-// src/lib/supabaseClient.ts
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -34,14 +33,28 @@ const assertClientKeyIsAnon = (key: string) => {
   }
 }
 
-if (!supabaseUrl) {
-  throw new Error('NEXT_PUBLIC_SUPABASE_URL is required.')
+let client: SupabaseClient | null = null
+
+const getSupabaseClient = (): SupabaseClient => {
+  if (client) return client
+
+  if (!supabaseUrl) {
+    throw new Error('NEXT_PUBLIC_SUPABASE_URL is required.')
+  }
+
+  if (!supabaseAnonKey) {
+    throw new Error('NEXT_PUBLIC_SUPABASE_ANON_KEY is required.')
+  }
+
+  assertClientKeyIsAnon(supabaseAnonKey)
+  client = createClient(supabaseUrl, supabaseAnonKey)
+  return client
 }
 
-if (!supabaseAnonKey) {
-  throw new Error('NEXT_PUBLIC_SUPABASE_ANON_KEY is required.')
-}
-
-assertClientKeyIsAnon(supabaseAnonKey)
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+export const supabase = new Proxy({} as SupabaseClient, {
+  get(_target, prop) {
+    const active = getSupabaseClient()
+    const value = active[prop as keyof SupabaseClient]
+    return typeof value === 'function' ? value.bind(active) : value
+  },
+})
