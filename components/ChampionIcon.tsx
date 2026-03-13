@@ -1,5 +1,6 @@
 // src/components/ChampionIcon.tsx
 import clsx from 'clsx'
+import Image from 'next/image'
 
 type Status = 'NONE' | 'PRIORITY' | 'PICKED' | 'UNAVAILABLE'
 
@@ -37,10 +38,13 @@ export function ChampionIcon({ champion, status, onClick }: ChampionIconProps) {
       title={champion.name}
     >
       {champion.icon_url ? (
-        <img
+        <Image
           src={champion.icon_url}
           alt={champion.name}
+          width={56}
+          height={56}
           className="w-full h-full object-cover"
+          unoptimized
         />
       ) : (
         <span className="text-[10px] text-zinc-200 text-center px-1">

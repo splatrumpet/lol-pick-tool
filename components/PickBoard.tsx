@@ -1,7 +1,8 @@
 // src/components/PickBoard.tsx
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import Image from 'next/image'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { ROLES, Role } from '@/constants/roles'
 
@@ -45,6 +46,58 @@ export type PickBoardProps = {
   preview?: boolean
 }
 
+const EMPTY_MEMBER_BY_ROLE: Record<Role, MemberRow | undefined> = {
+  TOP: undefined,
+  JG: undefined,
+  MID: undefined,
+  ADC: undefined,
+  SUP: undefined,
+}
+
+const EMPTY_PICKED_BY_ROLE: Record<Role, string | undefined> = {
+  TOP: undefined,
+  JG: undefined,
+  MID: undefined,
+  ADC: undefined,
+  SUP: undefined,
+}
+
+const EMPTY_PICKED_LIST_BY_ROLE: Record<Role, PoolRow | null> = {
+  TOP: null,
+  JG: null,
+  MID: null,
+  ADC: null,
+  SUP: null,
+}
+
+type PoolWithChampionDbRow = {
+  id: string
+  champion_id: string
+  role: Role
+  proficiency: number
+  user_id: string
+  champions: {
+    id: string
+    name: string
+    icon_url: string | null
+  }
+}
+
+type NoteDbRow = {
+  id: string
+  room_id: string
+  champion_id: string
+  status: Status
+  role: Role | null
+}
+
+const STATUS_RANK: Record<Status, number> = {
+  PICKED: 0,
+  PRIORITY: 1,
+  NONE: 2,
+  UNAVAILABLE: 3,
+}
+
 const getProficiencyStars = (p: number) => {
   if (p >= 3) return '★★★'
   if (p === 2) return '★★☆'
@@ -79,7 +132,7 @@ export const PickBoard = ({
   }, [pools])
 
   // room_members + user_champion_pools を取り直す関数
-  const fetchMembersAndPools = async () => {
+  const fetchMembersAndPools = useCallback(async () => {
     if (!roomId || preview) return
 
     // メンバー一覧
@@ -115,30 +168,31 @@ export const PickBoard = ({
     }
 
     const mappedPools: PoolRow[] = (poolData || [])
-      .map((p: any) => {
-        const member = membersData.find((m) => m.user_id === p.user_id)
+      .map((p) => {
+        const row = p as unknown as PoolWithChampionDbRow
+        const member = membersData.find((m) => m.user_id === row.user_id)
 
         if (!member) return null
-        if (member.role !== p.role) return null
+        if (member.role !== row.role) return null
 
         return {
-          id: p.id,
-          champion_id: p.champion_id,
-          role: p.role as Role,
-          proficiency: p.proficiency,
-          user_id: p.user_id,
+          id: row.id,
+          champion_id: row.champion_id,
+          role: row.role,
+          proficiency: row.proficiency,
+          user_id: row.user_id,
           display_name: member.display_name ?? '',
           champion: {
-            id: p.champions.id,
-            name: p.champions.name,
-            icon_url: p.champions.icon_url,
+            id: row.champions.id,
+            name: row.champions.name,
+            icon_url: row.champions.icon_url,
           },
         } as PoolRow
       })
       .filter((p): p is PoolRow => p !== null)
 
     setLocalPools(mappedPools)
-  }
+  }, [preview, roomId])
 
   // ===== Realtime購読（他ブラウザと同期） =====
   useEffect(() => {
@@ -157,12 +211,12 @@ export const PickBoard = ({
       }
 
       setLocalNotes(
-        (data || []).map((n: any) => ({
+        (data as NoteDbRow[] | null | undefined || []).map((n) => ({
           id: n.id,
           room_id: n.room_id,
           champion_id: n.champion_id,
-          status: n.status as Status,
-          role: (n.role ?? null) as Role | null,
+          status: n.status,
+          role: n.role ?? null,
         }))
       )
     }
@@ -209,19 +263,19 @@ export const PickBoard = ({
       supabase.removeChannel(notesChannel)
       supabase.removeChannel(membersChannel)
     }
-  }, [roomId, preview])
+  }, [fetchMembersAndPools, roomId, preview])
 
   // ===== 集計 =====
 
   // 各ロールで PICKED されているチャンプID
   const pickedByRole: Record<Role, string | undefined> = useMemo(() => {
-    const map: Partial<Record<Role, string>> = {}
+    const map = { ...EMPTY_PICKED_BY_ROLE }
     for (const n of localNotes) {
       if (n.role && n.status === 'PICKED') {
         map[n.role] = n.champion_id
       }
     }
-    return map as Record<Role, string | undefined>
+    return map
   }, [localNotes])
 
   // どこかのロールで PICKED されているチャンピオン集合
@@ -252,18 +306,25 @@ export const PickBoard = ({
 
   // ロールごとの担当メンバー
   const memberByRole: Record<Role, MemberRow | undefined> = useMemo(() => {
-    const map: Partial<Record<Role, MemberRow>> = {}
+    const map = { ...EMPTY_MEMBER_BY_ROLE }
     for (const m of localMembers) {
       map[m.role] = m
     }
-    return map as Record<Role, MemberRow | undefined>
+    return map
   }, [localMembers])
+
+  const noteByRoleAndChampion = useMemo(() => {
+    const map = new Map<string, NoteRow>()
+    for (const note of localNotes) {
+      if (!note.role) continue
+      map.set(`${note.role}:${note.champion_id}`, note)
+    }
+    return map
+  }, [localNotes])
 
   // 「生」のステータス（DBそのまま・ロール専用）
   const getRawStatus = (role: Role, championId: string): Status => {
-    const row = localNotes.find(
-      (n) => n.role === role && n.champion_id === championId
-    )
+    const row = noteByRoleAndChampion.get(`${role}:${championId}`)
     return row ? row.status : 'NONE'
   }
 
@@ -292,13 +353,7 @@ export const PickBoard = ({
   // 「このロールのメンバー」と「そのロールでPICKEDされたノート」から、
   // ぴったり対応するプールを探してくる
   const pickedListByRole: Record<Role, PoolRow | null> = useMemo(() => {
-    const result: Record<Role, PoolRow | null> = {
-      TOP: null,
-      JG: null,
-      MID: null,
-      ADC: null,
-      SUP: null,
-    }
+    const result = { ...EMPTY_PICKED_LIST_BY_ROLE }
 
     for (const role of ROLES) {
       const member = memberByRole[role]
@@ -449,21 +504,6 @@ export const PickBoard = ({
     }
   }
 
-  const statusRank = (s: Status) => {
-    switch (s) {
-      case 'PICKED':
-        return 0
-      case 'PRIORITY':
-        return 1
-      case 'NONE':
-        return 2
-      case 'UNAVAILABLE':
-        return 3
-      default:
-        return 9
-    }
-  }
-
   // ===== JSX =====
   return (
     <div className="space-y-6 text-sm text-zinc-200">
@@ -489,10 +529,13 @@ export const PickBoard = ({
                 {picked ? (
                   <>
                     {picked.champion.icon_url ? (
-                      <img
+                      <Image
                         src={picked.champion.icon_url}
                         alt={picked.champion.name}
+                        width={36}
+                        height={36}
                         className="w-9 h-9 rounded object-cover"
+                        unoptimized
                       />
                     ) : (
                       <div className="w-9 h-9 rounded bg-zinc-800 text-[9px] flex items-center justify-center text-zinc-300 px-1 text-center">
@@ -532,14 +575,14 @@ export const PickBoard = ({
         >
           {ROLES.map((role) => {
             const member = memberByRole[role]
-            const rolePools = poolsByRole[role] || []
+            const rolePools = poolsByRole[role]
 
             const sortedRolePools = [...rolePools].sort((a, b) => {
               const sa = getStatus(role, a.champion_id)
               const sb = getStatus(role, b.champion_id)
 
-              const ra = statusRank(sa)
-              const rb = statusRank(sb)
+              const ra = STATUS_RANK[sa]
+              const rb = STATUS_RANK[sb]
               if (ra !== rb) return ra - rb
 
               if (a.proficiency !== b.proficiency) {
@@ -598,10 +641,13 @@ export const PickBoard = ({
                           </div>
 
                           {p.champion.icon_url ? (
-                            <img
+                            <Image
                               src={p.champion.icon_url}
                               alt={p.champion.name}
+                              width={32}
+                              height={32}
                               className="w-8 h-8 rounded object-cover"
+                              unoptimized
                             />
                           ) : (
                             <div className="w-8 h-8 rounded bg-zinc-800 text-[8px] flex items-center justify-center text-zinc-300 px-1 text-center">

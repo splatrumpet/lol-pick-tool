@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
+import type { User } from '@supabase/supabase-js'
 
 type Room = {
   id: string
@@ -15,7 +16,7 @@ type Room = {
 
 export default function CreateRoomPage() {
   const router = useRouter()
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [newRoomName, setNewRoomName] = useState('')
   const [newRoomNote, setNewRoomNote] = useState('')

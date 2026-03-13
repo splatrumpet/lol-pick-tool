@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 // generate-champions-sql.js
 // champion.json から champions テーブル用の INSERT/UPSERT SQL を生成するスクリプト
 
