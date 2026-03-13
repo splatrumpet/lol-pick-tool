@@ -521,13 +521,15 @@ export const PickBoard = ({
         </div>
       </section>
 
-      {/* プール一覧（5ロール横並び） */}
-      <section className="glass-panel rounded-2xl p-4 overflow-x-auto">
+      {/* プール一覧（モバイルは横スワイプ、PCは多カラム） */}
+      <section className="glass-panel rounded-2xl p-4">
+        <p className="mb-3 text-[11px] text-zinc-400 sm:hidden">
+          左右スワイプでロールを切り替えられます。
+        </p>
         <div
-          className={[
-            preview ? 'w-full min-w-0' : 'min-w-[900px]',
-            'grid grid-cols-5 gap-3',
-          ].join(' ')}
+          className={preview
+            ? 'grid grid-cols-1 gap-3 sm:grid-cols-2'
+            : 'flex w-max gap-3 overflow-x-auto pb-1 snap-x snap-mandatory sm:grid sm:w-auto sm:grid-cols-2 sm:overflow-visible sm:pb-0 xl:grid-cols-5'}
         >
           {ROLES.map((role) => {
             const member = memberByRole[role]
@@ -549,19 +551,22 @@ export const PickBoard = ({
             })
 
             return (
-              <div key={role} className="flex flex-col gap-1.5">
+              <div
+                key={role}
+                className="w-[80vw] max-w-[340px] shrink-0 snap-start rounded-xl border border-white/10 bg-black/20 p-2 sm:w-auto sm:max-w-none sm:shrink"
+              >
                 <div className="text-center">
-                  <div className="text-xs font-semibold text-zinc-100">
+                  <div className="text-sm font-semibold text-zinc-100">
                     {role}
                   </div>
                   {member && (
-                    <div className="text-[10px] text-zinc-400">
+                    <div className="text-xs text-zinc-400">
                       {member.display_name}
                     </div>
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-1.5">
+                <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-2">
                   {sortedRolePools.map((p) => {
                     const status = getStatus(role, p.champion_id)
                     const raw = getRawStatus(role, p.champion_id)
@@ -572,7 +577,7 @@ export const PickBoard = ({
                     return (
                       <div
                         key={p.id}
-                        className="flex flex-col items-center gap-0.5 text-[9px]"
+                        className="flex flex-col items-center gap-1 text-[10px]"
                       >
                         <button
                           onClick={() =>
@@ -581,8 +586,8 @@ export const PickBoard = ({
                           disabled={
                             status === 'PICKED' || status === 'UNAVAILABLE'
                           }
-                        className={[
-                            'relative flex flex-col items-center gap-0.5 p-1 rounded-md border w-full transition-all duration-200',
+                          className={[
+                            'relative flex flex-col items-center gap-1 p-1.5 rounded-md border w-full transition-all duration-200',
                             status === 'PICKED'
                               ? 'border-emerald-400/80 bg-emerald-500/10 shadow-[0_0_18px_-10px_rgba(16,185,129,0.8)]'
                               : status === 'UNAVAILABLE'
@@ -592,7 +597,7 @@ export const PickBoard = ({
                                   : 'border-white/10 bg-zinc-900/40 hover:border-white/30 hover:bg-zinc-800/50 hover:-translate-y-0.5',
                           ].join(' ')}
                         >
-                          <div className="text-[8px] text-amber-300 leading-none">
+                          <div className="text-[9px] text-amber-300 leading-none">
                             {getProficiencyStars(p.proficiency)}
                           </div>
 
@@ -600,13 +605,13 @@ export const PickBoard = ({
                             <Image
                               src={p.champion.icon_url}
                               alt={p.champion.name}
-                              width={32}
-                              height={32}
-                              className="w-8 h-8 rounded object-cover"
+                              width={36}
+                              height={36}
+                              className="h-9 w-9 rounded object-cover"
                               unoptimized
                             />
                           ) : (
-                            <div className="w-8 h-8 rounded bg-zinc-800 text-[8px] flex items-center justify-center text-zinc-300 px-1 text-center">
+                            <div className="h-9 w-9 rounded bg-zinc-800 px-1 text-center text-[8px] text-zinc-300 flex items-center justify-center">
                               {p.champion.name}
                             </div>
                           )}
@@ -618,7 +623,7 @@ export const PickBoard = ({
                           )}
                         </button>
 
-                        <span className="text-[8px] text-zinc-200 text-center line-clamp-2">
+                        <span className="min-h-7 text-[9px] text-zinc-200 text-center line-clamp-2">
                           {p.champion.name}
                         </span>
 
@@ -630,8 +635,8 @@ export const PickBoard = ({
                             }
                             className={
                               raw === 'UNAVAILABLE'
-                                ? 'text-[8px] text-red-300 hover:text-red-200'
-                                : 'text-[8px] text-zinc-400 hover:text-zinc-200'
+                                ? 'text-[9px] text-red-300 hover:text-red-200'
+                                : 'text-[9px] text-zinc-400 hover:text-zinc-200'
                             }
                           >
                             {raw === 'UNAVAILABLE' ? '不可解除' : '不可'}
@@ -647,7 +652,7 @@ export const PickBoard = ({
                             disabled={
                               status === 'UNAVAILABLE' || pickedSomewhere
                             }
-                            className="text-[8px] text-emerald-300 hover:text-emerald-200 disabled:opacity-40"
+                            className="text-[9px] text-emerald-300 hover:text-emerald-200 disabled:opacity-40"
                           >
                             確定
                           </button>
@@ -656,7 +661,7 @@ export const PickBoard = ({
                             onClick={() =>
                               handleCancelConfirm(role, p.champion_id)
                             }
-                            className="text-[8px] text-red-400 hover:text-red-300"
+                            className="text-[9px] text-red-400 hover:text-red-300"
                           >
                             解除
                           </button>
@@ -666,7 +671,7 @@ export const PickBoard = ({
                   })}
 
                   {rolePools.length === 0 && (
-                    <div className="col-span-2 text-[10px] text-zinc-500 text-center mt-1">
+                    <div className="col-span-3 sm:col-span-2 mt-1 text-center text-[11px] text-zinc-500">
                       プール未登録
                     </div>
                   )}
