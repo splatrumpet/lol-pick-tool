@@ -3,9 +3,11 @@
 
 import Image from 'next/image'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { mapNoteRows, mapPoolsForMembers, NoteDbRow, PoolWithChampionDbRow } from '@/lib/roomDataMappers'
 import { supabase } from '@/lib/supabaseClient'
 import { ROLES, Role } from '@/constants/roles'
+import { reportError } from '@/lib/appError'
+import { fetchRoomMembersAndPools, fetchRoomNotes } from '@/lib/roomQueries'
+import { Notice, NoticeToast } from '@/components/NoticeToast'
 
 export type Status = 'NONE' | 'PRIORITY' | 'PICKED' | 'UNAVAILABLE'
 
@@ -107,6 +109,7 @@ export const PickBoard = ({
   // ===== メンバー & プール（リアルタイム同期用） =====
   const [localMembers, setLocalMembers] = useState<MemberRow[]>(members)
   const [localPools, setLocalPools] = useState<PoolRow[]>(pools)
+  const [notice, setNotice] = useState<Notice | null>(null)
 
   useEffect(() => {
     setLocalMembers(members)
@@ -120,44 +123,17 @@ export const PickBoard = ({
   const fetchMembersAndPools = useCallback(async () => {
     if (!roomId || preview) return
 
-    // メンバー一覧
-    const { data: memberRows, error: memberError } = await supabase
-      .from('room_members')
-      .select('id, room_id, user_id, display_name, role')
-      .eq('room_id', roomId)
-      .order('role', { ascending: true })
+    const { members: nextMembers, pools: nextPools, error } =
+      await fetchRoomMembersAndPools(roomId)
 
-    if (memberError) {
-      console.error('failed to fetch members', memberError)
+    if (error) {
+      reportError('PickBoard.fetchMembersAndPools', error)
+      setNotice({ type: 'error', message: 'メンバー/プールの再取得に失敗しました。' })
       return
     }
 
-    const membersData = (memberRows || []) as MemberRow[]
-    setLocalMembers(membersData)
-
-    const userIds = membersData.map((m) => m.user_id)
-    if (userIds.length === 0) {
-      setLocalPools([])
-      return
-    }
-
-    // そのメンバーのチャンピオンプール
-    const { data: poolData, error: poolError } = await supabase
-      .from('user_champion_pools')
-      .select('id, user_id, champion_id, role, proficiency, champions(*)')
-      .in('user_id', userIds)
-
-    if (poolError) {
-      console.error('failed to fetch pools', poolError)
-      return
-    }
-
-    setLocalPools(
-      mapPoolsForMembers(
-        (poolData || []) as unknown as PoolWithChampionDbRow[],
-        membersData
-      )
-    )
+    setLocalMembers(nextMembers as MemberRow[])
+    setLocalPools(nextPools as PoolRow[])
   }, [preview, roomId])
 
   // ===== Realtime購読（他ブラウザと同期） =====
@@ -168,19 +144,15 @@ export const PickBoard = ({
 
     // ---- ノート用（ピック状態） ----
     const fetchNotes = async () => {
-      const { data, error } = await supabase
-        .from('room_champion_notes')
-        .select('*')
-        .eq('room_id', roomId)
+      const { notes: nextNotes, error } = await fetchRoomNotes(roomId)
 
       if (error) {
-        console.error('failed to fetch notes', error)
+        reportError('PickBoard.fetchNotes', error)
+        setNotice({ type: 'error', message: 'ピック状態の同期に失敗しました。' })
         return
       }
 
-      setLocalNotes(
-        mapNoteRows((data as NoteDbRow<Status>[] | null | undefined) || [])
-      )
+      setLocalNotes(nextNotes as NoteRow[])
     }
 
     // 初回同期
@@ -453,12 +425,12 @@ export const PickBoard = ({
     const pickedSomewhere = pickedChampionSet.has(championId)
 
     if (pickedOfRole && pickedOfRole !== championId) {
-      alert(`${role} はすでに他のチャンピオンが確定済みです`)
+      setNotice({ type: 'info', message: `${role} はすでに他のチャンピオンが確定済みです` })
       return
     }
 
     if (pickedSomewhere && pickedOfRole !== championId) {
-      alert('このチャンピオンは別ロールで既に確定済みです')
+      setNotice({ type: 'info', message: 'このチャンピオンは別ロールで既に確定済みです' })
       return
     }
 
@@ -490,6 +462,7 @@ export const PickBoard = ({
   // ===== JSX =====
   return (
     <div className="space-y-6 text-sm text-zinc-200">
+      <NoticeToast notice={notice} onClose={() => setNotice(null)} />
       {/* 確定済み一覧（5枠固定） */}
       <section className="glass-panel rounded-2xl p-4">
         <h2 className="text-[11px] font-semibold uppercase tracking-[0.2em] mb-3 text-emerald-200/80">

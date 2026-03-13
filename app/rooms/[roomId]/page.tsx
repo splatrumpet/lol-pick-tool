@@ -4,27 +4,24 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import {
-  mapNoteRows,
-  mapPoolsForMembers,
-  NoteDbRow,
-  PoolWithChampionDbRow,
-} from '@/lib/roomDataMappers'
 import { PickBoard } from '@/components/PickBoard'
 import { ROLES, Role } from '@/constants/roles'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { Notice, NoticeToast } from '@/components/NoticeToast'
+import { getErrorMessage, reportError } from '@/lib/appError'
+import { fetchRoomMembersAndPools, fetchRoomNotes, MemberRow, NoteRow, PoolRow } from '@/lib/roomQueries'
 
 type PoolChangePayload = {
   new: { user_id?: string | null } | null
   old: { user_id?: string | null } | null
 }
 
-const ROLE_ORDER: Record<Role, number> = {
-  TOP: 0,
-  JG: 1,
-  MID: 2,
-  ADC: 3,
-  SUP: 4,
-}
+type ConfirmState = {
+  title: string
+  description: string
+  confirmLabel?: string
+  onConfirm: () => Promise<void>
+} | null
 
 const resolveRoomId = (params: ReturnType<typeof useParams>): string | null => {
   const p = params as { id?: string; roomId?: string } | null
@@ -35,9 +32,6 @@ const resolveRoomId = (params: ReturnType<typeof useParams>): string | null => {
   const match = window.location.pathname.match(/\/rooms\/([^\/?#]+)/)
   return match?.[1] ?? null
 }
-
-const sortMembersByRole = (rows: MemberRow[]) =>
-  [...rows].sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role])
 
 const getJoinNameFromUser = (user: {
   user_metadata?: Record<string, unknown>
@@ -60,36 +54,6 @@ type RoomRow = {
   created_at: string
 }
 
-type MemberRow = {
-  id: string
-  room_id: string
-  user_id: string
-  display_name: string
-  role: Role
-}
-
-type PoolRow = {
-  id: string
-  champion_id: string
-  role: Role
-  proficiency: number
-  user_id: string
-  display_name: string
-  champion: {
-    id: string
-    name: string
-    icon_url: string | null
-  }
-}
-
-type NoteRow = {
-  id?: string
-  room_id: string
-  champion_id: string
-  status: 'NONE' | 'PRIORITY' | 'PICKED' | 'UNAVAILABLE'
-  role: Role | null
-}
-
 export default function RoomPage() {
   const params = useParams()
   const [roomId, setRoomId] = useState<string | null>(null)
@@ -101,6 +65,8 @@ export default function RoomPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [notice, setNotice] = useState<Notice | null>(null)
+  const [confirmState, setConfirmState] = useState<ConfirmState>(null)
 
   // ルーム参加用フォーム
   const [joinRole, setJoinRole] = useState<Role | ''>('')
@@ -119,53 +85,26 @@ export default function RoomPage() {
       return
     }
 
-    console.error('roomId could not be resolved from params or URL', params)
+    reportError('RoomPage.resolveRoomId', params)
     setErrorMsg('ルームIDが取得できませんでした。URLを確認してください。')
     setLoading(false)
   }, [params])
 
   // ===== 共通ロード関数（メンバー & プール） =====
   const fetchMembersAndPools = async (targetRoomId: string) => {
-    const { data: memberRows, error: memberError } = await supabase
-      .from('room_members')
-      .select('id, room_id, user_id, display_name, role')
-      .eq('room_id', targetRoomId)
+    const { members: nextMembers, pools: nextPools, error } =
+      await fetchRoomMembersAndPools(targetRoomId)
 
-    if (memberError) {
-      console.error('failed to fetch members', memberError)
+    if (error) {
+      reportError('RoomPage.fetchMembersAndPools', error)
       setErrorMsg('メンバー情報の取得に失敗しました。')
       return
     }
 
-    const membersData = sortMembersByRole(
-      (memberRows || []) as MemberRow[]
-    )
-    setMembers(membersData)
-
-    const userIds = membersData.map((m) => m.user_id)
-    if (userIds.length === 0) {
-      setPools([])
-      return
-    }
-
-    const { data: poolData, error: poolError } = await supabase
-      .from('user_champion_pools')
-      .select('id, user_id, champion_id, role, proficiency, champions(*)')
-      .in('user_id', userIds)
-
-    if (poolError) {
-      console.error('failed to fetch pools', poolError)
-      setErrorMsg('チャンピオンプールの取得に失敗しました。')
-      return
-    }
-
-    setPools(
-      mapPoolsForMembers(
-        (poolData || []) as unknown as PoolWithChampionDbRow[],
-        membersData
-      )
-    )
+    setMembers(nextMembers)
+    setPools(nextPools)
   }
+
 
   // ===== 初期ロード（roomId が決まったあとに動く） =====
   useEffect(() => {
@@ -179,7 +118,7 @@ export default function RoomPage() {
         const { data: userData, error: userError } =
           await supabase.auth.getUser()
         if (userError) {
-          console.error('auth.getUser error', userError)
+          reportError('RoomPage.auth.getUser', userError)
         }
         const user = userData?.user ?? null
         setCurrentUserId(user?.id ?? null)
@@ -195,7 +134,7 @@ export default function RoomPage() {
           .single()
 
         if (roomError) {
-          console.error('failed to fetch room', roomError)
+          reportError('RoomPage.fetchRoom', roomError)
           setErrorMsg('ルーム情報の取得に失敗しました。')
         } else if (roomData) {
           const r = roomData as RoomRow
@@ -208,19 +147,16 @@ export default function RoomPage() {
         await fetchMembersAndPools(roomId)
 
         // ノート
-        const { data: noteRows, error: noteError } = await supabase
-          .from('room_champion_notes')
-          .select('*')
-          .eq('room_id', roomId)
+        const { notes: nextNotes, error: noteError } = await fetchRoomNotes(roomId)
 
         if (noteError) {
-          console.error('failed to fetch notes', noteError)
+          reportError('RoomPage.fetchNotes', noteError)
           setErrorMsg('ピック情報の取得に失敗しました。')
         } else {
-          setNotes(mapNoteRows((noteRows || []) as NoteDbRow<NoteRow['status']>[]))
+          setNotes(nextNotes)
         }
       } catch (e) {
-        console.error('init room error', e)
+        reportError('RoomPage.init', e)
         setErrorMsg('ルーム情報の読み込み中にエラーが発生しました。')
       } finally {
         setLoading(false)
@@ -308,21 +244,21 @@ export default function RoomPage() {
   const handleJoinRoom = async () => {
     if (!roomId) return
     if (!currentUserId) {
-      alert('ルームに参加するにはログインが必要です。')
+      setNotice({ type: 'info', message: 'ルームに参加するにはログインが必要です。' })
       return
     }
     if (!joinRole) {
-      alert('ロールを選択してください。')
+      setNotice({ type: 'info', message: 'ロールを選択してください。' })
       return
     }
 
     if (myMemberRow) {
-      alert('このルームにはすでに参加しています。')
+      setNotice({ type: 'info', message: 'このルームにはすでに参加しています。' })
       return
     }
 
     if (members.some((m) => m.role === joinRole)) {
-      alert('そのロールはすでに他のメンバーが担当しています。')
+      setNotice({ type: 'info', message: 'そのロールはすでに他のメンバーが担当しています。' })
       return
     }
 
@@ -336,8 +272,8 @@ export default function RoomPage() {
     })
 
     if (error) {
-      console.error('failed to join room', error)
-      alert('ルーム参加に失敗しました: ' + error.message)
+      reportError('RoomPage.joinRoom', error)
+      setNotice({ type: 'error', message: `ルーム参加に失敗しました: ${getErrorMessage(error, 'unknown error')}` })
       return
     }
 
@@ -348,7 +284,7 @@ export default function RoomPage() {
     if (!roomId || !myMemberRow || !changeRole) return
 
     if (changeRole === myMemberRow.role) {
-      alert('すでにそのロールを担当しています。')
+      setNotice({ type: 'info', message: 'すでにそのロールを担当しています。' })
       return
     }
 
@@ -357,7 +293,7 @@ export default function RoomPage() {
         (m) => m.role === changeRole && m.id !== myMemberRow.id
       )
     ) {
-      alert('そのロールはすでに他のメンバーが担当しています。')
+      setNotice({ type: 'info', message: 'そのロールはすでに他のメンバーが担当しています。' })
       return
     }
 
@@ -367,8 +303,8 @@ export default function RoomPage() {
       .eq('id', myMemberRow.id)
 
     if (error) {
-      console.error('failed to change role', error)
-      alert('ロール変更に失敗しました: ' + error.message)
+      reportError('RoomPage.changeRole', error)
+      setNotice({ type: 'error', message: `ロール変更に失敗しました: ${getErrorMessage(error, 'unknown error')}` })
       return
     }
 
@@ -378,23 +314,25 @@ export default function RoomPage() {
   const handleRemoveMember = async (target: MemberRow) => {
     if (!roomId) return
 
-    const ok = window.confirm(
-      `${target.display_name} のロールを外しますか？`
-    )
-    if (!ok) return
+    setConfirmState({
+      title: 'ロール解除の確認',
+      description: `${target.display_name} のロールを外しますか？`,
+      confirmLabel: '解除する',
+      onConfirm: async () => {
+        const { error } = await supabase
+          .from('room_members')
+          .delete()
+          .eq('id', target.id)
 
-    const { error } = await supabase
-      .from('room_members')
-      .delete()
-      .eq('id', target.id)
+        if (error) {
+          reportError('RoomPage.removeMember', error)
+          setNotice({ type: 'error', message: `ロールを外せませんでした: ${getErrorMessage(error, 'unknown error')}` })
+          return
+        }
 
-    if (error) {
-      console.error('failed to remove member', error)
-      alert('ロールを外せませんでした: ' + error.message)
-      return
-    }
-
-    await fetchMembersAndPools(roomId)
+        await fetchMembersAndPools(roomId)
+      },
+    })
   }
 
   // ===== ルーム情報の更新・削除 =====
@@ -403,7 +341,7 @@ export default function RoomPage() {
 
     const name = editName.trim()
     if (!name) {
-      alert('ルーム名を入力してください。')
+      setNotice({ type: 'info', message: 'ルーム名を入力してください。' })
       return
     }
 
@@ -418,8 +356,8 @@ export default function RoomPage() {
       .single()
 
     if (error) {
-      console.error('failed to update room', error)
-      alert('ルーム情報の更新に失敗しました: ' + error.message)
+      reportError('RoomPage.updateRoom', error)
+      setNotice({ type: 'error', message: `ルーム情報の更新に失敗しました: ${getErrorMessage(error, 'unknown error')}` })
       return
     }
 
@@ -430,41 +368,47 @@ export default function RoomPage() {
   const handleDeleteRoom = async () => {
     if (!roomId || !room) return
 
-    const ok = window.confirm(
-      'このルームを削除しますか？（ピック情報も含めて元に戻せません）'
-    )
-    if (!ok) return
+    setConfirmState({
+      title: 'ルーム削除の確認',
+      description: 'このルームを削除しますか？（ピック情報も含めて元に戻せません）',
+      confirmLabel: '削除する',
+      onConfirm: async () => {
+        const { error } = await supabase.from('rooms').delete().eq('id', roomId)
 
-    const { error } = await supabase.from('rooms').delete().eq('id', roomId)
+        if (error) {
+          reportError('RoomPage.deleteRoom', error)
+          setNotice({ type: 'error', message: `ルーム削除に失敗しました: ${getErrorMessage(error, 'unknown error')}` })
+          return
+        }
 
-    if (error) {
-      console.error('failed to delete room', error)
-      alert('ルーム削除に失敗しました: ' + error.message)
-      return
-    }
-
-    window.location.href = '/'
+        window.location.href = '/'
+      },
+    })
   }
 
   // ===== ピック状態全リセット =====
   const handleResetAllNotes = async () => {
     if (!roomId) return
 
-    const ok = window.confirm('全員のピック状態をリセットしますか？')
-    if (!ok) return
+    setConfirmState({
+      title: 'ピック状態リセットの確認',
+      description: '全員のピック状態をリセットしますか？',
+      confirmLabel: 'リセットする',
+      onConfirm: async () => {
+        const { error } = await supabase
+          .from('room_champion_notes')
+          .delete()
+          .eq('room_id', roomId)
 
-    const { error } = await supabase
-      .from('room_champion_notes')
-      .delete()
-      .eq('room_id', roomId)
+        if (error) {
+          reportError('RoomPage.resetNotes', error)
+          setNotice({ type: 'error', message: `リセットに失敗しました: ${getErrorMessage(error, 'unknown error')}` })
+          return
+        }
 
-    if (error) {
-      console.error('failed to reset notes', error)
-      alert('リセットに失敗しました: ' + error.message)
-      return
-    }
-
-    setNotes([])
+        setNotes([])
+      },
+    })
   }
 
   // ===== 描画 =====
@@ -508,6 +452,19 @@ export default function RoomPage() {
 
   return (
     <div className="p-4 md:p-8 space-y-8 text-sm text-zinc-200 max-w-6xl mx-auto fade-in">
+      <NoticeToast notice={notice} onClose={() => setNotice(null)} />
+      <ConfirmDialog
+        open={Boolean(confirmState)}
+        title={confirmState?.title ?? ''}
+        description={confirmState?.description ?? ''}
+        confirmLabel={confirmState?.confirmLabel}
+        onCancel={() => setConfirmState(null)}
+        onConfirm={async () => {
+          if (!confirmState) return
+          await confirmState.onConfirm()
+          setConfirmState(null)
+        }}
+      />
       {/* ヘッダー */}
       <header className="space-y-4 rounded-2xl px-5 py-4 glass-panel">
         {/* ルーム名／説明（編集モードと表示モード） */}
