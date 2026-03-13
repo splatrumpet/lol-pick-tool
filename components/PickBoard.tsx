@@ -529,7 +529,7 @@ export const PickBoard = ({
         <div
           className={preview
             ? 'grid grid-cols-1 gap-3 sm:grid-cols-2'
-            : 'flex w-max gap-3 overflow-x-auto pb-1 snap-x snap-mandatory sm:grid sm:w-auto sm:grid-cols-2 sm:overflow-visible sm:pb-0 xl:grid-cols-5'}
+            : 'flex w-full gap-3 overflow-x-auto pb-1 snap-x snap-mandatory sm:grid sm:grid-cols-2 sm:overflow-visible sm:pb-0 xl:grid-cols-5'}
         >
           {ROLES.map((role) => {
             const member = memberByRole[role]
@@ -553,7 +553,7 @@ export const PickBoard = ({
             return (
               <div
                 key={role}
-                className="w-[80vw] max-w-[340px] shrink-0 snap-start rounded-xl border border-white/10 bg-black/20 p-2 sm:w-auto sm:max-w-none sm:shrink"
+                className="w-[82vw] min-w-[280px] max-w-[340px] shrink-0 snap-start rounded-xl border border-white/10 bg-black/20 p-2 sm:w-auto sm:min-w-0 sm:max-w-none"
               >
                 <div className="text-center">
                   <div className="text-sm font-semibold text-zinc-100">
