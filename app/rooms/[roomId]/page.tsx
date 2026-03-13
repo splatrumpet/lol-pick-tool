@@ -28,9 +28,30 @@ const resolveRoomId = (params: ReturnType<typeof useParams>): string | null => {
 const sortMembersByRole = (rows: MemberRow[]) =>
   [...rows].sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role])
 
-const mapPools = (poolData: any[], membersData: MemberRow[]): PoolRow[] =>
+type PoolWithChampionRow = {
+  id: string
+  champion_id: string
+  role: Role
+  proficiency: number
+  user_id: string
+  champions: {
+    id: string
+    name: string
+    icon_url: string | null
+  }
+}
+
+type NoteDbRow = {
+  id: string
+  room_id: string
+  champion_id: string
+  status: NoteRow['status']
+  role: Role | null
+}
+
+const mapPools = (poolData: PoolWithChampionRow[], membersData: MemberRow[]): PoolRow[] =>
   poolData
-    .map((p: any) => {
+    .map((p) => {
       const member = membersData.find((m) => m.user_id === p.user_id)
       if (!member || member.role !== p.role) return null
 
@@ -50,8 +71,8 @@ const mapPools = (poolData: any[], membersData: MemberRow[]): PoolRow[] =>
     })
     .filter((p): p is PoolRow => p !== null)
 
-const mapNotes = (noteRows: any[]): NoteRow[] =>
-  noteRows.map((n: any) => ({
+const mapNotes = (noteRows: NoteDbRow[]): NoteRow[] =>
+  noteRows.map((n) => ({
     id: n.id,
     room_id: n.room_id,
     champion_id: n.champion_id,
@@ -179,7 +200,7 @@ export default function RoomPage() {
       return
     }
 
-    setPools(mapPools(poolData || [], membersData))
+    setPools(mapPools((poolData || []) as unknown as PoolWithChampionRow[], membersData))
   }
 
   // ===== 初期ロード（roomId が決まったあとに動く） =====

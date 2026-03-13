@@ -2,9 +2,10 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Image from 'next/image'
 import { supabase } from '@/lib/supabaseClient'
 import { ROLES, Role } from '@/constants/roles'
-import { LogoutButton } from '@/components/LogoutButton'
+import type { User } from '@supabase/supabase-js'
 
 type Champion = {
   id: string
@@ -18,6 +19,15 @@ type PoolRow = {
   role: Role
   proficiency: number
   champion: Champion
+}
+
+
+type ChampionRelationRow = {
+  id: string
+  champion_id: string
+  role: Role
+  proficiency: number
+  champions: Champion
 }
 
 const PROF_LABEL: Record<number, string> = {
@@ -46,7 +56,7 @@ const getProficiencyStars = (p: number) => {
 }
 
 export default function MyPage() {
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<User | null>(null)
   const [champions, setChampions] = useState<Champion[]>([])
   const [pools, setPools] = useState<PoolRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -90,17 +100,20 @@ export default function MyPage() {
         .eq('user_id', userData.user.id)
 
       setPools(
-        (poolData || []).map((p: any) => ({
-          id: p.id,
-          champion_id: p.champion_id,
-          role: p.role as Role,
-          proficiency: p.proficiency,
+        (poolData || []).map((p) => {
+          const row = p as unknown as ChampionRelationRow
+          return ({
+          id: row.id,
+          champion_id: row.champion_id,
+          role: row.role,
+          proficiency: row.proficiency,
           champion: {
-            id: p.champions.id,
-            name: p.champions.name,
-            icon_url: p.champions.icon_url,
+            id: row.champions.id,
+            name: row.champions.name,
+            icon_url: row.champions.icon_url,
           },
-        }))
+        })
+      })
       )
 
       setLoading(false)
@@ -163,7 +176,7 @@ export default function MyPage() {
       return
     }
 
-    const row = data?.[0] as any | undefined
+    const row = data?.[0] as unknown as ChampionRelationRow | undefined
     if (!row) return
 
     setPools((prev) => [
@@ -171,7 +184,7 @@ export default function MyPage() {
       {
         id: row.id,
         champion_id: row.champion_id,
-        role: row.role as Role,
+        role: row.role,
         proficiency: row.proficiency,
         champion: {
           id: row.champions.id,
@@ -213,12 +226,12 @@ export default function MyPage() {
       return
     }
 
-    const rows = (data || []) as any[]
+    const rows = (data || []) as unknown as ChampionRelationRow[]
 
     const mapped: PoolRow[] = rows.map((row) => ({
       id: row.id,
       champion_id: row.champion_id,
-      role: row.role as Role,
+      role: row.role,
       proficiency: row.proficiency,
       champion: {
         id: row.champions.id,
@@ -388,10 +401,13 @@ export default function MyPage() {
                         ].join(' ')}
                       >
                         {c.icon_url ? (
-                          <img
+                          <Image
                             src={c.icon_url}
                             alt={c.name}
+                            width={40}
+                            height={40}
                             className="w-10 h-10 rounded object-cover"
+                            unoptimized
                           />
                         ) : (
                           <div className="w-10 h-10 rounded bg-zinc-800 text-[9px] flex items-center justify-center text-zinc-300 text-center px-1">
@@ -420,10 +436,13 @@ export default function MyPage() {
                   {selectedChampion ? (
                     <>
                       {selectedChampion.icon_url ? (
-                        <img
+                        <Image
                           src={selectedChampion.icon_url}
                           alt={selectedChampion.name}
+                          width={32}
+                          height={32}
                           className="w-8 h-8 rounded object-cover"
+                          unoptimized
                         />
                       ) : (
                         <div className="w-8 h-8 rounded bg-zinc-800 text-[9px] flex items-center justify-center text-zinc-300">
@@ -518,10 +537,13 @@ export default function MyPage() {
                 className="flex items-center gap-2 bg-zinc-950/60 border border-zinc-800 rounded-lg px-2 py-1.5"
               >
                 {p.champion.icon_url ? (
-                  <img
+                  <Image
                     src={p.champion.icon_url}
                     alt={p.champion.name}
+                    width={32}
+                    height={32}
                     className="w-8 h-8 rounded object-cover"
+                    unoptimized
                   />
                 ) : (
                   <div className="w-8 h-8 rounded bg-zinc-800 text-[9px] flex items-center justify-center text-zinc-300">

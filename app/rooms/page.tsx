@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
+import type { User } from '@supabase/supabase-js'
 
 type Room = {
   id: string
@@ -13,9 +14,13 @@ type Room = {
   created_at: string
 }
 
+type RoomMemberRef = {
+  room_id: string
+}
+
 export default function RoomsPage() {
   const router = useRouter()
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<User | null>(null)
   const [rooms, setRooms] = useState<Room[]>([])
   const [loading, setLoading] = useState(true)
   const [roomQuery, setRoomQuery] = useState('')
@@ -55,7 +60,7 @@ export default function RoomsPage() {
         .select('room_id')
         .eq('user_id', userData.user.id)
 
-      const memberRoomIds = (memberRows || []).map((m: any) => m.room_id)
+      const memberRoomIds = (memberRows || []).map((m) => (m as RoomMemberRef).room_id)
 
       let memberRooms: Room[] = []
       if (memberRoomIds.length > 0) {
@@ -66,21 +71,27 @@ export default function RoomsPage() {
           .order('created_at', { ascending: false })
 
         memberRooms =
-          (data || []).map((r: any) => ({
-            id: r.id,
-            name: r.name,
-            note: r.note,
-            created_at: r.created_at,
-          })) ?? []
+          (data || []).map((r) => {
+            const room = r as Room
+            return ({
+            id: room.id,
+            name: room.name,
+            note: room.note,
+            created_at: room.created_at,
+          })
+          }) ?? []
       }
 
       const ownedMapped: Room[] =
-        (ownedRooms || []).map((r: any) => ({
-          id: r.id,
-          name: r.name,
-          note: r.note,
-          created_at: r.created_at,
-        })) ?? []
+        (ownedRooms || []).map((r) => {
+          const room = r as Room
+          return ({
+          id: room.id,
+          name: room.name,
+          note: room.note,
+          created_at: room.created_at,
+        })
+        }) ?? []
 
       const map = new Map<string, Room>()
       ownedMapped.forEach((r) => map.set(r.id, r))

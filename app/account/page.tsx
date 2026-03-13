@@ -3,10 +3,11 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import type { User } from '@supabase/supabase-js'
 import { LogoutButton } from '@/components/LogoutButton'
 
 export default function AccountPage() {
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<User | null>(null)
   const [displayName, setDisplayName] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -19,7 +20,7 @@ export default function AccountPage() {
       setUser(u || null)
 
       if (u) {
-        const meta = (u.user_metadata || {}) as any
+        const meta = (u.user_metadata || {}) as Record<string, unknown>
         const fromMeta =
           (meta.display_name as string | undefined) ||
           (meta.full_name as string | undefined)

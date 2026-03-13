@@ -1,6 +1,35 @@
 // src/app/page.tsx
 import Link from 'next/link'
-import { PickBoardPreview } from '@/components/PickBoardPreview'
+
+const demoSteps = [
+  {
+    id: '01',
+    phase: '試合前',
+    title: '各自がマイプールを更新',
+    detail:
+      '得意度を揃えておくことで、ロールごとの実戦候補がすぐに共有されます。',
+    accent: 'text-emerald-200',
+    badge: 'bg-emerald-500/15 border-emerald-300/30 text-emerald-100',
+  },
+  {
+    id: '02',
+    phase: 'ドラフト中',
+    title: '候補・確定・不可を全員で反映',
+    detail:
+      '誰かが更新した状態は即時反映。VCしながらでも盤面の認識ズレが起きにくくなります。',
+    accent: 'text-sky-200',
+    badge: 'bg-sky-500/15 border-sky-300/30 text-sky-100',
+  },
+  {
+    id: '03',
+    phase: '最終確認',
+    title: 'ロールごとの確定ピックを可視化',
+    detail:
+      '「このロールはもう確定済み」が明確になるので、残り時間の意思決定を絞れます。',
+    accent: 'text-amber-200',
+    badge: 'bg-amber-500/15 border-amber-300/30 text-amber-100',
+  },
+]
 
 export default function HomePage() {
   return (
@@ -76,28 +105,49 @@ export default function HomePage() {
             <div className="absolute -bottom-20 -left-10 h-56 w-56 rounded-full bg-sky-400/10 blur-3xl" />
             <div className="relative space-y-4">
               <div className="flex items-center justify-between text-[11px] text-zinc-400">
-                <span>Draft Board Preview</span>
-                <span className="text-emerald-200">Live Sync</span>
+                <span>Draft Workflow Preview</span>
+                <span className="text-emerald-200">Team Awareness</span>
               </div>
-              <div className="rounded-xl border border-white/10 bg-black/30 p-3 sm:p-4">
-                <div className="flex justify-center">
-                  <div className="origin-center scale-[0.8] sm:scale-[0.9]">
-                    <PickBoardPreview />
+
+              <div className="space-y-2.5">
+                {demoSteps.map((step) => (
+                  <div
+                    key={step.id}
+                    className="rounded-xl border border-white/10 bg-black/30 px-3.5 py-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-[10px] tracking-[0.22em] text-zinc-400 uppercase">
+                        {step.phase}
+                      </div>
+                      <span
+                        className={[
+                          'inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold',
+                          step.badge,
+                        ].join(' ')}
+                      >
+                        STEP {step.id}
+                      </span>
+                    </div>
+                    <h3 className={['mt-1 text-sm font-semibold', step.accent].join(' ')}>
+                      {step.title}
+                    </h3>
+                    <p className="mt-1 text-xs text-zinc-300 leading-relaxed">{step.detail}</p>
                   </div>
-                </div>
+                ))}
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[12px] text-zinc-200">
-                <div className="flex items-center gap-2 rounded-full border border-sky-300/30 bg-sky-500/10 px-3 py-1">
-                  <span className="h-2.5 w-2.5 rounded-full bg-sky-300" />
-                  <span className="font-semibold text-sky-200">候補</span>
+
+              <div className="grid grid-cols-3 gap-2 text-[11px] text-zinc-200">
+                <div className="rounded-lg border border-white/10 bg-zinc-900/60 px-2.5 py-2 text-center">
+                  <p className="text-zinc-400">同期速度</p>
+                  <p className="mt-1 font-semibold text-emerald-200">リアルタイム</p>
                 </div>
-                <div className="flex items-center gap-2 rounded-full border border-emerald-300/30 bg-emerald-500/10 px-3 py-1">
-                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-300" />
-                  <span className="font-semibold text-emerald-200">確定</span>
+                <div className="rounded-lg border border-white/10 bg-zinc-900/60 px-2.5 py-2 text-center">
+                  <p className="text-zinc-400">対象</p>
+                  <p className="mt-1 font-semibold text-sky-200">5ロール</p>
                 </div>
-                <div className="flex items-center gap-2 rounded-full border border-rose-300/30 bg-rose-500/10 px-3 py-1">
-                  <span className="h-2.5 w-2.5 rounded-full bg-rose-300" />
-                  <span className="font-semibold text-rose-200">ピック不可</span>
+                <div className="rounded-lg border border-white/10 bg-zinc-900/60 px-2.5 py-2 text-center">
+                  <p className="text-zinc-400">状態管理</p>
+                  <p className="mt-1 font-semibold text-rose-200">候補 / 確定 / 不可</p>
                 </div>
               </div>
             </div>
