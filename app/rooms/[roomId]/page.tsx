@@ -4,8 +4,19 @@
 import { useEffect, useState, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
+import {
+  mapNoteRows,
+  mapPoolsForMembers,
+  NoteDbRow,
+  PoolWithChampionDbRow,
+} from '@/lib/roomDataMappers'
 import { PickBoard } from '@/components/PickBoard'
 import { ROLES, Role } from '@/constants/roles'
+
+type PoolChangePayload = {
+  new: { user_id?: string | null } | null
+  old: { user_id?: string | null } | null
+}
 
 const ROLE_ORDER: Record<Role, number> = {
   TOP: 0,
@@ -27,58 +38,6 @@ const resolveRoomId = (params: ReturnType<typeof useParams>): string | null => {
 
 const sortMembersByRole = (rows: MemberRow[]) =>
   [...rows].sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role])
-
-type PoolWithChampionRow = {
-  id: string
-  champion_id: string
-  role: Role
-  proficiency: number
-  user_id: string
-  champions: {
-    id: string
-    name: string
-    icon_url: string | null
-  }
-}
-
-type NoteDbRow = {
-  id: string
-  room_id: string
-  champion_id: string
-  status: NoteRow['status']
-  role: Role | null
-}
-
-const mapPools = (poolData: PoolWithChampionRow[], membersData: MemberRow[]): PoolRow[] =>
-  poolData
-    .map((p) => {
-      const member = membersData.find((m) => m.user_id === p.user_id)
-      if (!member || member.role !== p.role) return null
-
-      return {
-        id: p.id,
-        champion_id: p.champion_id,
-        role: p.role as Role,
-        proficiency: p.proficiency,
-        user_id: p.user_id,
-        display_name: member.display_name ?? '',
-        champion: {
-          id: p.champions.id,
-          name: p.champions.name,
-          icon_url: p.champions.icon_url,
-        },
-      } as PoolRow
-    })
-    .filter((p): p is PoolRow => p !== null)
-
-const mapNotes = (noteRows: NoteDbRow[]): NoteRow[] =>
-  noteRows.map((n) => ({
-    id: n.id,
-    room_id: n.room_id,
-    champion_id: n.champion_id,
-    status: n.status,
-    role: (n.role ?? null) as Role | null,
-  }))
 
 const getJoinNameFromUser = (user: {
   user_metadata?: Record<string, unknown>
@@ -200,7 +159,12 @@ export default function RoomPage() {
       return
     }
 
-    setPools(mapPools((poolData || []) as unknown as PoolWithChampionRow[], membersData))
+    setPools(
+      mapPoolsForMembers(
+        (poolData || []) as unknown as PoolWithChampionDbRow[],
+        membersData
+      )
+    )
   }
 
   // ===== 初期ロード（roomId が決まったあとに動く） =====
@@ -253,7 +217,7 @@ export default function RoomPage() {
           console.error('failed to fetch notes', noteError)
           setErrorMsg('ピック情報の取得に失敗しました。')
         } else {
-          setNotes(mapNotes(noteRows || []))
+          setNotes(mapNoteRows((noteRows || []) as NoteDbRow<NoteRow['status']>[]))
         }
       } catch (e) {
         console.error('init room error', e)
@@ -270,7 +234,9 @@ export default function RoomPage() {
   useEffect(() => {
     if (!roomId) return
 
-    const channel = supabase
+    const memberUserIdSet = new Set(members.map((m) => m.user_id))
+
+    const membersChannel = supabase
       .channel(`room-${roomId}-members-header`)
       .on(
         'postgres_changes',
@@ -286,10 +252,30 @@ export default function RoomPage() {
       )
       .subscribe()
 
+    const poolsChannel = supabase
+      .channel(`room-${roomId}-pools-header`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'user_champion_pools',
+        },
+        (payload) => {
+          const p = payload as unknown as PoolChangePayload
+          const changedUserId = p.new?.user_id ?? p.old?.user_id
+          if (!changedUserId) return
+          if (!memberUserIdSet.has(changedUserId)) return
+          fetchMembersAndPools(roomId)
+        }
+      )
+      .subscribe()
+
     return () => {
-      supabase.removeChannel(channel)
+      supabase.removeChannel(membersChannel)
+      supabase.removeChannel(poolsChannel)
     }
-  }, [roomId])
+  }, [members, roomId])
 
   // ===== 自分のメンバー情報・空きロール =====
   const myMemberRow = useMemo(

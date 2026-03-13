@@ -3,6 +3,7 @@
 
 import Image from 'next/image'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { mapNoteRows, mapPoolsForMembers, NoteDbRow, PoolWithChampionDbRow } from '@/lib/roomDataMappers'
 import { supabase } from '@/lib/supabaseClient'
 import { ROLES, Role } from '@/constants/roles'
 
@@ -46,6 +47,11 @@ export type PickBoardProps = {
   preview?: boolean
 }
 
+type PoolChangePayload = {
+  new: { user_id?: string | null } | null
+  old: { user_id?: string | null } | null
+}
+
 const EMPTY_MEMBER_BY_ROLE: Record<Role, MemberRow | undefined> = {
   TOP: undefined,
   JG: undefined,
@@ -68,27 +74,6 @@ const EMPTY_PICKED_LIST_BY_ROLE: Record<Role, PoolRow | null> = {
   MID: null,
   ADC: null,
   SUP: null,
-}
-
-type PoolWithChampionDbRow = {
-  id: string
-  champion_id: string
-  role: Role
-  proficiency: number
-  user_id: string
-  champions: {
-    id: string
-    name: string
-    icon_url: string | null
-  }
-}
-
-type NoteDbRow = {
-  id: string
-  room_id: string
-  champion_id: string
-  status: Status
-  role: Role | null
 }
 
 const STATUS_RANK: Record<Status, number> = {
@@ -167,36 +152,19 @@ export const PickBoard = ({
       return
     }
 
-    const mappedPools: PoolRow[] = (poolData || [])
-      .map((p) => {
-        const row = p as unknown as PoolWithChampionDbRow
-        const member = membersData.find((m) => m.user_id === row.user_id)
-
-        if (!member) return null
-        if (member.role !== row.role) return null
-
-        return {
-          id: row.id,
-          champion_id: row.champion_id,
-          role: row.role,
-          proficiency: row.proficiency,
-          user_id: row.user_id,
-          display_name: member.display_name ?? '',
-          champion: {
-            id: row.champions.id,
-            name: row.champions.name,
-            icon_url: row.champions.icon_url,
-          },
-        } as PoolRow
-      })
-      .filter((p): p is PoolRow => p !== null)
-
-    setLocalPools(mappedPools)
+    setLocalPools(
+      mapPoolsForMembers(
+        (poolData || []) as unknown as PoolWithChampionDbRow[],
+        membersData
+      )
+    )
   }, [preview, roomId])
 
   // ===== Realtime購読（他ブラウザと同期） =====
   useEffect(() => {
     if (!roomId || preview) return
+
+    const memberUserIdSet = new Set(localMembers.map((m) => m.user_id))
 
     // ---- ノート用（ピック状態） ----
     const fetchNotes = async () => {
@@ -211,13 +179,7 @@ export const PickBoard = ({
       }
 
       setLocalNotes(
-        (data as NoteDbRow[] | null | undefined || []).map((n) => ({
-          id: n.id,
-          room_id: n.room_id,
-          champion_id: n.champion_id,
-          status: n.status,
-          role: n.role ?? null,
-        }))
+        mapNoteRows((data as NoteDbRow<Status>[] | null | undefined) || [])
       )
     }
 
@@ -259,11 +221,32 @@ export const PickBoard = ({
       )
       .subscribe()
 
+    // ---- プール用 ----
+    const poolsChannel = supabase
+      .channel(`room-${roomId}-pools`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'user_champion_pools',
+        },
+        (payload) => {
+          const p = payload as unknown as PoolChangePayload
+          const changedUserId = p.new?.user_id ?? p.old?.user_id
+          if (!changedUserId) return
+          if (!memberUserIdSet.has(changedUserId)) return
+          fetchMembersAndPools()
+        }
+      )
+      .subscribe()
+
     return () => {
       supabase.removeChannel(notesChannel)
       supabase.removeChannel(membersChannel)
+      supabase.removeChannel(poolsChannel)
     }
-  }, [fetchMembersAndPools, roomId, preview])
+  }, [fetchMembersAndPools, localMembers, roomId, preview])
 
   // ===== 集計 =====
 
