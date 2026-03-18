@@ -16,7 +16,7 @@ export type PoolWithChampionDbRow = {
     id: string
     name: string
     icon_url: string | null
-  }
+  } | null
 }
 
 export type MappedPoolRow = {
@@ -58,7 +58,7 @@ export const mapPoolsForMembers = (
   return poolData
     .map((p) => {
       const member = memberByUserId.get(p.user_id)
-      if (!member || member.role !== p.role) return null
+      if (!member || member.role !== p.role || !p.champions) return null
 
       return {
         id: p.id,
@@ -87,4 +87,3 @@ export const mapNoteRows = <TStatus extends string>(
     status: n.status,
     role: n.role ?? null,
   }))
-
