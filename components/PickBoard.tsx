@@ -639,7 +639,7 @@ export const PickBoard = ({
                                 : 'text-[9px] text-zinc-400 hover:text-zinc-200'
                             }
                           >
-                            {raw === 'UNAVAILABLE' ? '不可解除' : '不可'}
+                            {raw === 'UNAVAILABLE' ? 'BAN解除' : 'BAN'}
                           </button>
                         )}
 
